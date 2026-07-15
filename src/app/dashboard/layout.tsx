@@ -7,7 +7,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!session) redirect("/login");
 
   return (
-    <DashboardShell fullName={session.fullName} username={session.username}>
+    <DashboardShell fullName={session.fullName} username={session.username} isImpersonating={!!session.impersonatorId}>
       {children}
     </DashboardShell>
   );

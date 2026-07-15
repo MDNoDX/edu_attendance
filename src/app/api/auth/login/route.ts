@@ -42,11 +42,12 @@ export async function POST(request: NextRequest) {
     sub: user.id,
     username: user.username,
     fullName: user.fullName,
+    role: user.role,
   });
 
   return NextResponse.json({
     ok: true,
-    redirectTo: "/dashboard",
+    redirectTo: user.role === "SUPER_ADMIN" ? "/admin" : "/dashboard",
     user: {
       id: user.id,
       username: user.username,

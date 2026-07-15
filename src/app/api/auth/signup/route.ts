@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
     sub: user.id,
     username: user.username,
     fullName: user.fullName,
+    role: user.role,
   });
 
   return NextResponse.json({

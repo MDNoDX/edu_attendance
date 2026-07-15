@@ -8,14 +8,16 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/layout/user-menu";
 import { NotificationCenter } from "@/components/layout/notification-center";
+import { ImpersonationBanner } from "@/components/layout/impersonation-banner";
 
 interface DashboardShellProps {
   fullName: string;
   username: string;
+  isImpersonating?: boolean;
   children: React.ReactNode;
 }
 
-export function DashboardShell({ fullName, username, children }: DashboardShellProps) {
+export function DashboardShell({ fullName, username, isImpersonating, children }: DashboardShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -33,6 +35,7 @@ export function DashboardShell({ fullName, username, children }: DashboardShellP
       </Sheet>
 
       <div className="flex min-h-screen flex-1 flex-col">
+        {isImpersonating && <ImpersonationBanner />}
         <header className="glass sticky top-0 z-40 flex h-16 items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Menyu">

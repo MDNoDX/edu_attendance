@@ -2,6 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
+import { prisma } from "@/lib/db";
 
 const SESSION_COOKIE = "ustoz_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -15,16 +16,20 @@ function getSecretKey() {
 }
 
 /**
- * Ustoz Akademiyasi is a single-role app: every account IS a teacher who
- * fully self-manages their own courses, groups, students, attendance and
- * payments. There is no admin/oversight role, so the session payload only
- * ever needs to identify WHO is logged in — every query in src/app/actions
- * scopes itself to `session.sub` (the user id).
+ * NadirEdu has two kinds of accounts: TEACHER (the normal, self-service
+ * case — every query in src/app/actions scopes itself to `session.sub`)
+ * and a small number of SUPER_ADMIN platform-owner accounts that can see
+ * across every teacher from /admin. `impersonatorId` is set only while a
+ * SUPER_ADMIN is "logged in as" a specific teacher for support purposes —
+ * it records the admin's own user id so the session can be handed back to
+ * them via stopImpersonation().
  */
 export interface SessionPayload {
   sub: string; // user id
   username: string;
   fullName: string;
+  role: "TEACHER" | "SUPER_ADMIN";
+  impersonatorId?: string;
   [key: string]: unknown;
 }
 
@@ -86,6 +91,22 @@ export async function requireSession(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) {
     throw new Error("UNAUTHENTICATED");
+  }
+  return session;
+}
+
+/**
+ * Throws unless the current session belongs to a SUPER_ADMIN account.
+ * Deliberately re-checks the role against the database on every call
+ * (rather than trusting the JWT's `role` claim alone) so that revoking an
+ * admin takes effect immediately, even if they still hold an unexpired
+ * session token.
+ */
+export async function requireSuperAdmin(): Promise<SessionPayload> {
+  const session = await requireSession();
+  const user = await prisma.user.findUnique({ where: { id: session.sub }, select: { role: true, isActive: true } });
+  if (!user || !user.isActive || user.role !== "SUPER_ADMIN") {
+    throw new Error("FORBIDDEN");
   }
   return session;
 }

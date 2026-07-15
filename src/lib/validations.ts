@@ -162,6 +162,31 @@ export const recordPaymentSchema = z.object({
 // TYPES
 // ----------------------------------------------------------------------------
 
+// ----------------------------------------------------------------------------
+// SUPER ADMIN — editing/managing teacher accounts from /admin. Separate from
+// profileUpdateSchema because an admin can also touch username/isActive,
+// which a teacher can never change about their own account through /dashboard.
+// ----------------------------------------------------------------------------
+
+export const adminUpdateTeacherSchema = z.object({
+  fullName: z.string().min(2, "Ism-familiya kiritilishi shart").optional(),
+  username: z
+    .string()
+    .min(3, "Login kamida 3 ta belgi")
+    .max(32)
+    .regex(/^[a-zA-Z0-9_.]+$/, "Login faqat lotin harflar, raqam, _ va . dan iborat bo'lsin")
+    .optional(),
+  email: z.string().email("Email noto'g'ri").optional().or(z.literal("")),
+  phone: z.string().optional(),
+  defaultLessonRate: z.coerce.number().min(0).optional(),
+  specialization: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const adminResetPasswordSchema = z.object({
+  newPassword: z.string().min(6, "Yangi parol kamida 6 ta belgi"),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;

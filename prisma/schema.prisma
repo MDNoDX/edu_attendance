@@ -63,9 +63,21 @@ enum PaymentMethod {
   OTHER
 }
 
+/// TEACHER: the normal self-service account (default for every /signup
+/// registration). SUPER_ADMIN: a small number of platform-owner accounts,
+/// provisioned only via the `prisma/create-admin.ts` script (never through
+/// self-signup), that can see every teacher, impersonate them for support,
+/// and edit/deactivate their accounts from /admin.
+enum UserRole {
+  TEACHER
+  SUPER_ADMIN
+}
+
 // ----------------------------------------------------------------------------
-// USER — a single self-registering Teacher account. Everything below is
-// scoped to a userId and never visible to any other user.
+// USER — a self-registering Teacher account (the normal case), or a
+// separately-provisioned SUPER_ADMIN platform-owner account. A teacher's
+// data is scoped to their own userId and never visible to any other
+// teacher — only a SUPER_ADMIN can see across accounts.
 // ----------------------------------------------------------------------------
 
 model User {
@@ -76,6 +88,8 @@ model User {
   email        String?  @unique
   phone        String?
   photoUrl     String?
+
+  role UserRole @default(TEACHER)
 
   /// Default per-attended-lesson earning share in UZS, e.g. 18500.
   /// Can be overridden per-group via Group.teacherLessonRateOverride.
