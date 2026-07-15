@@ -9,6 +9,11 @@ import { resolvePeriodRange, periodLabelUZ, type ReportPeriod } from "@/lib/repo
 import { formatDate } from "@/lib/utils";
 
 export const runtime = "nodejs";
+// This route reads the session cookie (via requireSession) on every request,
+// so it can never be statically rendered/cached. Without this, Next.js may
+// attempt static optimization and throw "Dynamic server usage: ... cookies"
+// at request time in production.
+export const dynamic = "force-dynamic";
 
 /**
  * The teacher's own attendance/earnings report export. The teacher chooses
