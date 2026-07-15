@@ -9,6 +9,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/ui/money-input";
 import { registerSchema, type RegisterInput } from "@/lib/validations";
 
 export function SignupForm() {
@@ -19,6 +20,8 @@ export function SignupForm() {
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
@@ -95,12 +98,11 @@ export function SignupForm() {
 
       <div className="space-y-2">
         <Label htmlFor="defaultLessonRate">Bitta darsga standart ulush (so&apos;m)</Label>
-        <Input
+        <MoneyInput
           id="defaultLessonRate"
-          type="number"
-          min={0}
-          step={500}
-          {...register("defaultLessonRate")}
+          value={watch("defaultLessonRate")}
+          onChange={(v) => setValue("defaultLessonRate", v ?? 0)}
+          placeholder="18 500"
         />
         <p className="text-xs text-muted-foreground">
           Har bir o&apos;tilgan darsdan olayotgan ulushingiz. Har bir guruh uchun keyinroq alohida

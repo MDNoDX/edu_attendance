@@ -171,8 +171,17 @@ export async function markAttendance(input: unknown) {
     data: { status: "COMPLETED" },
   });
 
+  // NOTE: deliberately NOT calling revalidatePath for the group detail page
+  // itself. This action is invoked directly from the Attendance Journal
+  // client component, which already refetches getGroupAttendanceJournal()
+  // right after this resolves — that's the single source of truth for the
+  // on-screen grid. Revalidating the currently-active route here would make
+  // Next.js re-run the whole page's Server Component (including its DB
+  // query) on every single click, which is both wasted work and, if that
+  // extra query ever hiccups, would surface as the entire page swapping to
+  // a 404/error screen mid-click. Only the list page (student counts) needs
+  // a cache bust.
   revalidatePath("/dashboard/groups");
-  revalidatePath(`/dashboard/groups/${lessonSession.groupId}`);
   return { ok: true as const };
 }
 
@@ -213,8 +222,10 @@ export async function bulkMarkAttendance(input: unknown) {
 
   await prisma.lessonSession.update({ where: { id: lessonSessionId }, data: { status: "COMPLETED" } });
 
+  // See the comment in markAttendance() above — no revalidatePath for the
+  // active group detail route, to avoid forcing a fragile server re-render
+  // on every attendance write.
   revalidatePath("/dashboard/groups");
-  revalidatePath(`/dashboard/groups/${lessonSession.groupId}`);
   return { ok: true as const };
 }
 

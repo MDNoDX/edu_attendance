@@ -2,12 +2,16 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { SignupForm } from "./signup-form";
 import { APP_NAME } from "@/lib/constants";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function SignupPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-12">
       <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-primary/20 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-accent/40 blur-3xl" />
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
 
       <div className="glass relative w-full max-w-md rounded-2xl p-8 shadow-xl">
         <div className="mb-8 flex flex-col items-center text-center">

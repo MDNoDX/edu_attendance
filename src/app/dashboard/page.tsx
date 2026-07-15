@@ -9,10 +9,10 @@ export default async function DashboardHomePage() {
   const stats = await getDashboardStats();
 
   const periods = [
-    { label: "Bugun", data: stats.today },
-    { label: "Bu hafta", data: stats.week },
-    { label: "Bu oy", data: stats.month },
-    { label: "Bu yil", data: stats.year },
+    { label: "Bugun", data: stats.today, color: "text-info" },
+    { label: "Bu hafta", data: stats.week, color: "text-violet" },
+    { label: "Bu oy", data: stats.month, color: "text-primary" },
+    { label: "Bu yil", data: stats.year, color: "text-success" },
   ];
 
   return (
@@ -20,8 +20,8 @@ export default async function DashboardHomePage() {
       <PageHeader title="Bosh sahifa" description="Faoliyatingiz bo'yicha umumiy ko'rsatkichlar" />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Faol guruhlarim" value={stats.groupCount} icon={Layers} />
-        <StatCard label="Studentlarim" value={stats.studentCount} icon={Users} />
+        <StatCard label="Faol guruhlarim" value={stats.groupCount} icon={Layers} tone="violet" />
+        <StatCard label="Studentlarim" value={stats.studentCount} icon={Users} tone="info" />
         <StatCard label="Bugungi daromad" value={formatUZS(stats.today.earned)} icon={Wallet} tone="success" />
         <StatCard label="Bu oy yo'qotilgan" value={formatUZS(stats.month.lostToCutoff)} icon={TrendingDown} tone="destructive" />
       </div>
@@ -31,7 +31,7 @@ export default async function DashboardHomePage() {
           <Card key={p.label}>
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
-                <CalendarCheck className="h-4 w-4 text-primary" /> {p.label}
+                <CalendarCheck className={`h-4 w-4 ${p.color}`} /> {p.label}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-1.5 text-sm">

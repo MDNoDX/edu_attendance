@@ -7,7 +7,7 @@ interface StatCardProps {
   value: string | number;
   icon: LucideIcon;
   hint?: string;
-  tone?: "default" | "success" | "warning" | "destructive";
+  tone?: "default" | "success" | "warning" | "destructive" | "info" | "violet";
 }
 
 const toneClasses: Record<NonNullable<StatCardProps["tone"]>, string> = {
@@ -15,6 +15,8 @@ const toneClasses: Record<NonNullable<StatCardProps["tone"]>, string> = {
   success: "bg-success/10 text-success",
   warning: "bg-warning/10 text-warning",
   destructive: "bg-destructive/10 text-destructive",
+  info: "bg-info/10 text-info",
+  violet: "bg-violet/10 text-violet",
 };
 
 export function StatCard({ label, value, icon: Icon, hint, tone = "default" }: StatCardProps) {

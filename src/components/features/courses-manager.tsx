@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -120,14 +121,22 @@ export function CoursesManager({ initialCourses }: { initialCourses: CourseRow[]
                   <Input type="number" {...createForm.register("durationMonths")} placeholder="6" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Oylik narx (so'm)</Label>
-                  <Input type="number" {...createForm.register("monthlyPrice")} placeholder="720000" />
+                  <Label>Oylik narx (talaba to&apos;lovi)</Label>
+                  <MoneyInput
+                    value={createForm.watch("monthlyPrice")}
+                    onChange={(v) => createForm.setValue("monthlyPrice", v ?? 0)}
+                    placeholder="720 000"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Oyiga dars soni</Label>
                   <Input type="number" {...createForm.register("lessonsPerMonth")} placeholder="12" />
                 </div>
               </div>
+              <p className="rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+                Bu — talabadan olinadigan oylik to&apos;lov, sizning ulushingiz emas. Sizning bir
+                darsdan olayotgan summangiz <strong>Guruh</strong> yaratishda alohida belgilanadi.
+              </p>
               <div className="space-y-2">
                 <Label>Tavsif (ixtiyoriy)</Label>
                 <Input {...createForm.register("description")} />
@@ -152,7 +161,7 @@ export function CoursesManager({ initialCourses }: { initialCourses: CourseRow[]
               <CardContent className="space-y-3">
                 <p className="text-sm text-muted-foreground">{course.description || course.subject || "Tavsif kiritilmagan"}</p>
                 <div className="grid grid-cols-2 gap-1 text-sm">
-                  <span>Narx: <strong>{formatUZS(Number(course.monthlyPrice))}</strong>/oy</span>
+                  <span>Talaba to&apos;lovi: <strong>{formatUZS(Number(course.monthlyPrice))}</strong>/oy</span>
                   <span>Davomiyligi: <strong>{course.durationMonths} oy</strong></span>
                   <span>Dars/oy: <strong>{course.lessonsPerMonth}</strong></span>
                   <span className="flex items-center gap-1">
@@ -195,8 +204,11 @@ export function CoursesManager({ initialCourses }: { initialCourses: CourseRow[]
                 <Input type="number" {...editForm.register("durationMonths")} />
               </div>
               <div className="space-y-2">
-                <Label>Oylik narx (so'm)</Label>
-                <Input type="number" {...editForm.register("monthlyPrice")} />
+                <Label>Oylik narx (talaba to&apos;lovi)</Label>
+                <MoneyInput
+                  value={editForm.watch("monthlyPrice")}
+                  onChange={(v) => editForm.setValue("monthlyPrice", v ?? 0)}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Oyiga dars soni</Label>

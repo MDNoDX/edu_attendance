@@ -14,8 +14,16 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
   let journal;
   try {
     journal = await getGroupAttendanceJournal(groupId, now);
-  } catch {
-    notFound();
+  } catch (error) {
+    // Only a genuinely missing/foreign group should 404. Any other error
+    // (a transient DB hiccup, etc.) should NOT silently swap the whole page
+    // to "not found" — that looks like the app randomly kicked the teacher
+    // out to an unrelated screen. Let it bubble to the nearest error.tsx
+    // boundary instead, which renders in place with a retry option.
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      notFound();
+    }
+    throw error;
   }
 
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/ui/money-input";
 import {
   profileUpdateSchema,
   changePasswordSchema,
@@ -94,7 +95,11 @@ export function ProfileForm({ profile }: { profile: ProfileData }) {
             </div>
             <div className="space-y-2">
               <Label>Bitta darsga standart ulush (so&apos;m)</Label>
-              <Input type="number" {...profileForm.register("defaultLessonRate")} />
+              <MoneyInput
+                value={profileForm.watch("defaultLessonRate")}
+                onChange={(v) => profileForm.setValue("defaultLessonRate", v ?? 0)}
+                placeholder="18 500"
+              />
               <p className="text-xs text-muted-foreground">
                 Har bir guruh uchun alohida override qo&apos;yish mumkin (Guruhlarim bo&apos;limida).
               </p>

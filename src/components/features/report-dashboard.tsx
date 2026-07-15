@@ -164,9 +164,41 @@ export function ReportDashboard({
         </CardContent>
       </Card>
 
+      <Card className="border-primary/30 bg-primary/[0.03]">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Excel yoki PDF sifatida yuklab olish</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Hisobotda ko&apos;rinadigan ustunlar</Label>
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-card p-3 sm:grid-cols-3">
+              {ATTENDANCE_REPORT_FIELDS.map((field) => (
+                <label key={field.key} className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={selectedFields.includes(field.key)} onCheckedChange={() => toggleField(field.key)} />
+                  {field.label}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => handleExport("xlsx")} disabled={exporting !== null}>
+              {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              Excel
+            </Button>
+            <Button onClick={() => handleExport("pdf")} disabled={exporting !== null}>
+              {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              PDF
+            </Button>
+          </div>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Check className="h-3.5 w-3.5" /> Yuklab olingan fayl aynan yuqoridagi filtr va sanalarga mos keladi.
+          </p>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Studentlar" value={analytics.totalStudents} icon={Users} />
-        <StatCard label="Oylik kutilayotgan summa" value={formatUZS(analytics.totalMonthlyRevenue)} icon={Wallet} />
+        <StatCard label="Studentlar" value={analytics.totalStudents} icon={Users} tone="info" />
+        <StatCard label="Oylik kutilayotgan summa" value={formatUZS(analytics.totalMonthlyRevenue)} icon={Wallet} tone="violet" />
         <StatCard label="Davr ichida ulushim" value={formatUZS(analytics.totalEarnedInRange)} icon={Wallet} tone="success" />
         <StatCard label="Yo'qotilgan (uzr)" value={formatUZS(analytics.totalLostToCutoff)} icon={TrendingDown} tone="destructive" />
       </div>
@@ -261,38 +293,6 @@ export function ReportDashboard({
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Excel yoki PDF sifatida yuklab olish</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Hisobotda ko&apos;rinadigan ustunlar</Label>
-            <div className="grid grid-cols-2 gap-2 rounded-lg border border-border p-3 sm:grid-cols-3">
-              {ATTENDANCE_REPORT_FIELDS.map((field) => (
-                <label key={field.key} className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={selectedFields.includes(field.key)} onCheckedChange={() => toggleField(field.key)} />
-                  {field.label}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => handleExport("xlsx")} disabled={exporting !== null}>
-              {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-              Excel
-            </Button>
-            <Button onClick={() => handleExport("pdf")} disabled={exporting !== null}>
-              {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              PDF
-            </Button>
-          </div>
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Check className="h-3.5 w-3.5" /> Yuklab olingan fayl aynan yuqoridagi filtr va sanalarga mos keladi.
-          </p>
         </CardContent>
       </Card>
     </div>

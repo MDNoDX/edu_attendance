@@ -19,16 +19,35 @@ const nextConfig = {
     // `require("iconv-lite")` for optional non-UTF8 font string encoding
     // that this app never uses. Webpack still tries to statically resolve
     // that require at BUILD time and fails with "Module not found" even
-    // though it's genuinely optional at runtime. Marking these packages as
-    // external makes Next `require()` them for real at request time via
-    // Node's own resolver (which correctly honors the try/catch and just
-    // leaves the optional dependency undefined), instead of bundling them.
+    // though it's genuinely optional at runtime.
+    // NOTE: `serverComponentsExternalPackages` only affects React Server
+    // Component rendering, NOT Route Handlers (app/api/**/route.ts) — it
+    // has no effect here. The actual fix for Route Handlers is the
+    // `webpack()` override below.
     serverComponentsExternalPackages: ["pdfkit", "fontkit", "restructure"],
   },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**" },
     ],
+  },
+  // Force pdfkit to stay a real, unbundled `require("pdfkit")` in the
+  // server output instead of being inlined into route.js. When webpack
+  // bundles pdfkit, its `__dirname` at runtime resolves to the BUNDLED
+  // file's location (e.g. .next/server/app/api/reports/teacher/), not to
+  // pdfkit's real install path — so its `path.join(__dirname, "data",
+  // "Helvetica.afm")` font lookup 404s (ENOENT) in production even though
+  // it works locally. Externalizing it keeps `__dirname` pointing at the
+  // real node_modules/pdfkit/js/ folder, where outputFileTracingIncludes
+  // above has already ensured the actual data/*.afm files are deployed
+  // alongside it.
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      const externals = Array.isArray(config.externals) ? config.externals : [];
+      externals.push("pdfkit");
+      config.externals = externals;
+    }
+    return config;
   },
 };
 

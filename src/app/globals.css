@@ -34,6 +34,15 @@
     --warning: 38 92% 50%;
     --warning-foreground: 26 30% 15%;
 
+    /* Secondary accent hues, used deliberately so the UI doesn't read as one
+       repeated indigo everywhere — teal for informational/neutral stats,
+       violet for a second brand-adjacent accent (schedule, counts, etc). */
+    --info: 191 91% 32%;
+    --info-foreground: 0 0% 100%;
+
+    --violet: 262 83% 58%;
+    --violet-foreground: 0 0% 100%;
+
     --border: 240 16% 89%;
     --input: 240 16% 89%;
     --ring: 243 75% 59%;
@@ -71,6 +80,12 @@
 
     --warning: 38 80% 55%;
     --warning-foreground: 26 30% 10%;
+
+    --info: 191 80% 48%;
+    --info-foreground: 191 60% 8%;
+
+    --violet: 262 80% 72%;
+    --violet-foreground: 262 40% 10%;
 
     --border: 243 20% 18%;
     --input: 243 20% 18%;
