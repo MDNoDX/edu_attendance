@@ -10,6 +10,7 @@ import {
   type AttendanceHistoryEntry,
   type AttendanceMark,
 } from "@/lib/attendance-payment";
+import { serializeDecimals } from "@/lib/serialize";
 import type { Prisma } from "@prisma/client";
 
 /** Resolves the effective per-lesson teacher rate for a group (override or the teacher's default). */
@@ -70,13 +71,13 @@ export async function getLessonRoster(lessonSessionId: string) {
 
   const attendanceByStudent = new Map(lessonSession.attendances.map((a) => [a.studentId, a]));
 
-  return {
+  return serializeDecimals({
     lessonSession,
     roster: lessonSession.group.students.map((student) => ({
       student,
       attendance: attendanceByStudent.get(student.id) ?? null,
     })),
-  };
+  });
 }
 
 /**
@@ -108,11 +109,13 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  return {
+  // The whole payload is run through serializeDecimals because this action
+  // is called directly from client code (the Attendance Journal's month
+  // navigation), not just used as a Server Component prop — `group.course`
+  // carries a Decimal `monthlyPrice` that would otherwise crash on the wire.
+  return serializeDecimals({
     group,
     students: group.students,
-    // `marks` is a plain object (not a Map) so this payload survives the
-    // server -> client component serialization boundary intact.
     sessions: sessions.map((s) => ({
       id: s.id,
       date: s.date,
@@ -126,7 +129,7 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
         ]),
       ),
     })),
-  };
+  });
 }
 
 export async function markAttendance(input: unknown) {

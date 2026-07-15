@@ -93,7 +93,8 @@ export function StudentsManager({
   async function onCreate(data: StudentInput) {
     const res = await createStudent(data);
     if (!res.ok) {
-      toast.error(res.error.formErrors?.[0] ?? "Ma'lumotlarni tekshiring.");
+      const message = typeof res.error === "string" ? res.error : res.error.formErrors?.[0];
+      toast.error(message ?? "Ma'lumotlarni tekshiring.");
       return;
     }
     toast.success("Student qo'shildi.");

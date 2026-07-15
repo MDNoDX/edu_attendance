@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { studentSchema } from "@/lib/validations";
+import { serializeDecimals } from "@/lib/serialize";
 import type { StudentStatus } from "@prisma/client";
 
 export interface StudentFilters {
@@ -44,12 +45,12 @@ export async function listStudents(filters: StudentFilters = {}) {
     prisma.student.count({ where }),
   ]);
 
-  return { students, total, page, pageSize, pageCount: Math.ceil(total / pageSize) };
+  return { students: serializeDecimals(students), total, page, pageSize, pageCount: Math.ceil(total / pageSize) };
 }
 
 export async function getStudent(studentId: string) {
   const session = await requireSession();
-  return prisma.student.findFirst({
+  const student = await prisma.student.findFirst({
     where: { id: studentId, userId: session.sub, deletedAt: null },
     include: {
       course: true,
@@ -57,6 +58,7 @@ export async function getStudent(studentId: string) {
       payments: { orderBy: { billingMonth: "desc" } },
     },
   });
+  return serializeDecimals(student);
 }
 
 export async function createStudent(input: unknown) {

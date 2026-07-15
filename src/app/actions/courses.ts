@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { courseSchema } from "@/lib/validations";
+import { serializeDecimals } from "@/lib/serialize";
 
 // Every query and mutation here is scoped to the logged-in teacher's own
 // userId — there is no admin oversight, so ownership is the only guard we
@@ -12,13 +13,14 @@ import { courseSchema } from "@/lib/validations";
 
 export async function listCourses() {
   const session = await requireSession();
-  return prisma.course.findMany({
+  const courses = await prisma.course.findMany({
     where: { userId: session.sub, deletedAt: null },
     include: {
       groups: { where: { deletedAt: null }, include: { students: { where: { deletedAt: null } } } },
     },
     orderBy: { createdAt: "desc" },
   });
+  return serializeDecimals(courses);
 }
 
 export async function createCourse(input: unknown) {
@@ -31,7 +33,7 @@ export async function createCourse(input: unknown) {
   });
 
   revalidatePath("/dashboard/courses");
-  return { ok: true as const, course };
+  return { ok: true as const, course: serializeDecimals(course) };
 }
 
 export async function updateCourse(courseId: string, input: unknown) {
@@ -48,7 +50,7 @@ export async function updateCourse(courseId: string, input: unknown) {
   });
 
   revalidatePath("/dashboard/courses");
-  return { ok: true as const, course };
+  return { ok: true as const, course: serializeDecimals(course) };
 }
 
 export async function deleteCourse(courseId: string) {

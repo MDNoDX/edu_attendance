@@ -4,25 +4,30 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession, verifyPassword, hashPassword } from "@/lib/auth";
 import { profileUpdateSchema, changePasswordSchema } from "@/lib/validations";
+import { serializeDecimals } from "@/lib/serialize";
+
+// Fields safe to send to the client — passwordHash must never leave the server.
+const SAFE_PROFILE_SELECT = {
+  id: true,
+  username: true,
+  fullName: true,
+  email: true,
+  phone: true,
+  photoUrl: true,
+  defaultLessonRate: true,
+  specialization: true,
+  bio: true,
+  createdAt: true,
+} as const;
 
 /** The logged-in teacher's own profile — the single self-service account record. */
 export async function getProfile() {
   const session = await requireSession();
-  return prisma.user.findUniqueOrThrow({
+  const user = await prisma.user.findUniqueOrThrow({
     where: { id: session.sub },
-    select: {
-      id: true,
-      username: true,
-      fullName: true,
-      email: true,
-      phone: true,
-      photoUrl: true,
-      defaultLessonRate: true,
-      specialization: true,
-      bio: true,
-      createdAt: true,
-    },
+    select: SAFE_PROFILE_SELECT,
   });
+  return serializeDecimals(user);
 }
 
 export async function updateProfile(input: unknown) {
@@ -43,10 +48,11 @@ export async function updateProfile(input: unknown) {
       ...parsed.data,
       email: parsed.data.email === "" ? null : parsed.data.email,
     },
+    select: SAFE_PROFILE_SELECT,
   });
 
   revalidatePath("/dashboard/profile");
-  return { ok: true as const, user };
+  return { ok: true as const, user: serializeDecimals(user) };
 }
 
 export async function changePassword(input: unknown) {

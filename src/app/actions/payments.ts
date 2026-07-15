@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { recordPaymentSchema } from "@/lib/validations";
+import { serializeDecimals } from "@/lib/serialize";
 import type { PaymentStatus, Prisma } from "@prisma/client";
 
 function firstOfMonth(date: Date) {
@@ -16,10 +17,10 @@ export async function ensureBillingForStudent(studentId: string, billingMonth: D
   const existing = await prisma.payment.findUnique({
     where: { studentId_billingMonth: { studentId, billingMonth: month } },
   });
-  if (existing) return existing;
+  if (existing) return serializeDecimals(existing);
 
   const student = await prisma.student.findUniqueOrThrow({ where: { id: studentId }, include: { course: true } });
-  return prisma.payment.create({
+  const payment = await prisma.payment.create({
     data: {
       userId: student.userId,
       studentId,
@@ -29,6 +30,7 @@ export async function ensureBillingForStudent(studentId: string, billingMonth: D
       status: "UNPAID",
     },
   });
+  return serializeDecimals(payment);
 }
 
 /** Bulk-generates the current month's billing rows for every active student owned by the teacher. Idempotent. */
@@ -81,7 +83,7 @@ export async function listPayments(filters: PaymentFilters = {}) {
     prisma.payment.count({ where }),
   ]);
 
-  return { payments, total, page, pageSize, pageCount: Math.ceil(total / pageSize) };
+  return { payments: serializeDecimals(payments), total, page, pageSize, pageCount: Math.ceil(total / pageSize) };
 }
 
 export async function recordPayment(input: unknown) {
@@ -118,14 +120,15 @@ export async function recordPayment(input: unknown) {
   });
 
   revalidatePath("/dashboard/payments");
-  return { ok: true as const, payment: updated };
+  return { ok: true as const, payment: serializeDecimals(updated) };
 }
 
 export async function getStudentPaymentSummary(studentId: string) {
   const session = await requireSession();
-  return prisma.payment.findMany({
+  const payments = await prisma.payment.findMany({
     where: { studentId, userId: session.sub, deletedAt: null },
     include: { transactions: true },
     orderBy: { billingMonth: "desc" },
   });
+  return serializeDecimals(payments);
 }

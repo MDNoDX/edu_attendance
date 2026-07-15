@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
+import { serializeDecimals } from "@/lib/serialize";
 
 /**
  * Generates concrete LessonSession rows from a Group's recurring
@@ -79,11 +80,12 @@ export async function getScheduleSessions(filters: ScheduleFilters) {
   };
   if (filters.groupId) where.groupId = filters.groupId;
 
-  return prisma.lessonSession.findMany({
+  const sessions = await prisma.lessonSession.findMany({
     where,
     include: {
       group: { include: { course: true, students: { where: { deletedAt: null } } } },
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
+  return serializeDecimals(sessions);
 }

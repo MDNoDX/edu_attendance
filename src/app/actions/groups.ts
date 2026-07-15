@@ -5,10 +5,11 @@ import { prisma } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { groupSchema } from "@/lib/validations";
 import { generateLessonSessionsForGroup } from "@/app/actions/schedule";
+import { serializeDecimals } from "@/lib/serialize";
 
 export async function listGroups() {
   const session = await requireSession();
-  return prisma.group.findMany({
+  const groups = await prisma.group.findMany({
     where: { userId: session.sub, deletedAt: null },
     include: {
       course: true,
@@ -17,11 +18,12 @@ export async function listGroups() {
     },
     orderBy: { createdAt: "desc" },
   });
+  return serializeDecimals(groups);
 }
 
 export async function getGroup(groupId: string) {
   const session = await requireSession();
-  return prisma.group.findFirst({
+  const group = await prisma.group.findFirst({
     where: { id: groupId, userId: session.sub },
     include: {
       course: true,
@@ -29,6 +31,7 @@ export async function getGroup(groupId: string) {
       scheduleSlots: true,
     },
   });
+  return serializeDecimals(group);
 }
 
 /** Checks the teacher isn't double-booking their own room name at an overlapping weekly slot. */
@@ -89,7 +92,7 @@ export async function createGroup(input: unknown) {
 
   revalidatePath("/dashboard/groups");
   revalidatePath("/dashboard/schedule");
-  return { ok: true as const, group };
+  return { ok: true as const, group: serializeDecimals(group) };
 }
 
 export async function updateGroup(groupId: string, input: unknown) {
@@ -119,7 +122,7 @@ export async function updateGroup(groupId: string, input: unknown) {
 
   revalidatePath("/dashboard/groups");
   revalidatePath("/dashboard/schedule");
-  return { ok: true as const, group };
+  return { ok: true as const, group: serializeDecimals(group) };
 }
 
 export async function updateGroupStatus(groupId: string, status: "ACTIVE" | "FINISHED" | "PAUSED") {
@@ -130,7 +133,7 @@ export async function updateGroupStatus(groupId: string, status: "ACTIVE" | "FIN
   const group = await prisma.group.update({ where: { id: groupId }, data: { status } });
 
   revalidatePath("/dashboard/groups");
-  return { ok: true as const, group };
+  return { ok: true as const, group: serializeDecimals(group) };
 }
 
 export async function deleteGroup(groupId: string) {
