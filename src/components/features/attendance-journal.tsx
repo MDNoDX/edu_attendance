@@ -2,10 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Lock, Check, X as XIcon, Clock, Minus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, Check, X as XIcon, Clock, Minus, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -117,6 +118,7 @@ export function AttendanceJournal({
   const [pending, startTransition] = useTransition();
   const [savingCell, setSavingCell] = useState<string | null>(null);
   const [lateDialog, setLateDialog] = useState<{ sessionId: string; studentId: string; time: string } | null>(null);
+  const [noteDialog, setNoteDialog] = useState<{ sessionId: string; studentId: string; note: string } | null>(null);
 
   const monthDate = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -137,10 +139,28 @@ export function AttendanceJournal({
     });
   }
 
-  async function handleMark(sessionId: string, studentId: string, status: AttendanceStatus, arrivalTime?: string) {
+  async function handleMark(
+    sessionId: string,
+    studentId: string,
+    status: AttendanceStatus,
+    arrivalTime?: string,
+    note?: string,
+  ) {
     const cellKey = `${sessionId}:${studentId}`;
     setSavingCell(cellKey);
-    const res = await markAttendance({ lessonSessionId: sessionId, studentId, status, arrivalTime });
+    let res;
+    try {
+      res = await markAttendance({ lessonSessionId: sessionId, studentId, status, arrivalTime, note });
+    } catch {
+      // Defense in depth: the server action itself now catches DB errors and
+      // returns { ok: false }, but if something still throws (network drop,
+      // serverless cold-start timeout, etc.) we must not let it become an
+      // unhandled rejection — show a toast and keep the grid as-is instead
+      // of it silently breaking.
+      setSavingCell(null);
+      toast.error("Saqlanmadi — internet aloqasini tekshirib, qaytadan urinib ko'ring.");
+      return;
+    }
     if (!res.ok) {
       setSavingCell(null);
       toast.error(typeof res.error === "string" ? res.error : "Xatolik yuz berdi.");
@@ -181,6 +201,14 @@ export function AttendanceJournal({
       });
       return;
     }
+    if (status === "EXCUSED_ABSENT") {
+      // Sababli kelmadi: teacher may optionally jot down why, purely as
+      // their own note — never required, can be left blank.
+      const existing = sessions.find((s) => s.id === sessionId)?.marks[studentId];
+      setNoteDialog({ sessionId, studentId, note: existing?.note ?? "" });
+      return;
+    }
+    // Sababsiz kelmadi (and Keldi) never carry a note — mark immediately.
     handleMark(sessionId, studentId, status);
   }
 
@@ -188,6 +216,12 @@ export function AttendanceJournal({
     if (!lateDialog) return;
     handleMark(lateDialog.sessionId, lateDialog.studentId, "LATE", lateDialog.time);
     setLateDialog(null);
+  }
+
+  function confirmNoteMark() {
+    if (!noteDialog) return;
+    handleMark(noteDialog.sessionId, noteDialog.studentId, "EXCUSED_ABSENT", undefined, noteDialog.note.trim() || undefined);
+    setNoteDialog(null);
   }
 
   const groupTotal = useMemo(() => {
@@ -275,6 +309,7 @@ export function AttendanceJournal({
                   <th key={s.id} className="min-w-14 px-1 py-2 text-center font-medium">
                     <div className="text-[10px] uppercase text-muted-foreground">{weekdayShort(s.date)}</div>
                     <div>{dayNumber(s.date)}</div>
+                    <div className="text-[9px] font-normal leading-none text-muted-foreground">{s.startTime}</div>
                   </th>
                 ))}
                 <th className="min-w-28 px-3 py-2 text-right font-medium">Ulushim</th>
@@ -316,12 +351,10 @@ export function AttendanceJournal({
                           </td>
                         );
                       }
-                      const tooltip =
-                        mark?.status === "LATE" && mark.arrivalTime
-                          ? `Kechikdi — ${mark.arrivalTime}`
-                          : mark
-                            ? STATUS_CONFIG[mark.status].label
-                            : undefined;
+                      const tooltipParts = [mark ? STATUS_CONFIG[mark.status].label : null];
+                      if (mark?.status === "LATE" && mark.arrivalTime) tooltipParts.push(`Vaqt: ${mark.arrivalTime}`);
+                      if (mark?.note) tooltipParts.push(`Izoh: ${mark.note}`);
+                      const tooltip = tooltipParts.filter(Boolean).join(" · ") || undefined;
                       return (
                         <td key={s.id} className="px-1 py-2 text-center">
                           <DropdownMenu>
@@ -330,7 +363,7 @@ export function AttendanceJournal({
                                 disabled={savingCell === cellKey}
                                 title={tooltip}
                                 className={cn(
-                                  "mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                                  "relative mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-colors",
                                   mark ? STATUS_CONFIG[mark.status].className : "bg-muted text-muted-foreground/50 hover:bg-accent",
                                 )}
                               >
@@ -341,6 +374,11 @@ export function AttendanceJournal({
                                   })()
                                 ) : (
                                   <span className="text-xs">·</span>
+                                )}
+                                {mark?.note && (
+                                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-background">
+                                    <MessageSquareText className="h-2 w-2 text-foreground/70" />
+                                  </span>
                                 )}
                               </button>
                             </DropdownMenuTrigger>
@@ -357,7 +395,9 @@ export function AttendanceJournal({
                             </DropdownMenuContent>
                           </DropdownMenu>
                           {mark?.status === "LATE" && mark.arrivalTime && (
-                            <div className="mt-0.5 text-[9px] leading-none text-muted-foreground">{mark.arrivalTime}</div>
+                            <div className="mx-auto mt-0.5 w-fit rounded bg-amber-500/15 px-1 text-[9px] font-medium leading-tight text-amber-600 dark:text-amber-400">
+                              {mark.arrivalTime}
+                            </div>
                           )}
                         </td>
                       );
@@ -400,6 +440,26 @@ export function AttendanceJournal({
           </div>
           <DialogFooter>
             <Button onClick={confirmLateMark}>Tasdiqlash</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!noteDialog} onOpenChange={(open) => !open && setNoteDialog(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Sababli kelmadi</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Izoh (ixtiyoriy, faqat o&apos;zingiz uchun)</Label>
+            <Textarea
+              value={noteDialog?.note ?? ""}
+              onChange={(e) => setNoteDialog((prev) => (prev ? { ...prev, note: e.target.value } : prev))}
+              placeholder="Masalan: kasal, oilaviy sabab..."
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button onClick={confirmNoteMark}>Saqlash</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

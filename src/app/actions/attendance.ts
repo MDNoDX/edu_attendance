@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/db";
+import { prisma, toFriendlyDbError } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { markAttendanceSchema, bulkMarkAttendanceSchema } from "@/lib/validations";
 import {
@@ -102,11 +102,17 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
   // group-creation time, with nothing extending them afterwards. An older
   // group can silently run out of upcoming sessions, making the journal show
   // "no lesson days this month" for a month that should clearly have
-  // classes. This call is idempotent (skips dates that already exist), so
-  // it's safe to run on every journal load — it just tops up the next 8
-  // weeks from today if anything's missing.
+  // classes. This call is idempotent (skips dates that already exist, and
+  // covers from the group's startDate forward), so it's safe to run on
+  // every journal load. Wrapped defensively: if this ever fails for any
+  // reason, the journal should still render with whatever sessions already
+  // exist rather than taking down the whole page load.
   if (group.status === "ACTIVE") {
-    await generateLessonSessionsForGroup(groupId, 8);
+    try {
+      await generateLessonSessionsForGroup(groupId, 8);
+    } catch {
+      // Non-fatal — fall through with whatever sessions already exist.
+    }
   }
 
   const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
@@ -156,6 +162,10 @@ export async function markAttendance(input: unknown) {
   const { lessonSessionId, studentId, status, note, arrivalTime } = parsed.data;
   // arrivalTime only makes sense for a LATE mark — ignore it for any other status.
   const resolvedArrivalTime = status === "LATE" ? (arrivalTime ?? null) : null;
+  // A free-text note is only meaningful for an EXCUSED absence (a teacher's
+  // own reminder of *why*) — enforced here too, not just in the UI, so an
+  // UNEXCUSED_ABSENT can never carry a note no matter what called this.
+  const resolvedNote = status === "EXCUSED_ABSENT" ? (note ?? null) : null;
 
   const lessonSession = await prisma.lessonSession.findFirst({
     where: { id: lessonSessionId, userId: session.sub },
@@ -170,26 +180,36 @@ export async function markAttendance(input: unknown) {
 
   const { rate, lessonValue } = await getLessonRateForGroup(lessonSession.groupId);
 
-  await prisma.attendance.upsert({
-    where: { studentId_lessonSessionId: { studentId, lessonSessionId } },
-    create: {
-      studentId,
-      lessonSessionId,
-      status,
-      note,
-      arrivalTime: resolvedArrivalTime,
-      teacherEarningAmount: 0, // fixed immediately below by recompute
-      lessonValueSnapshot: lessonValue,
-    },
-    update: { status, note, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
-  });
+  // Everything below is wrapped: any DB-level failure here (including a
+  // schema mismatch like a not-yet-migrated column) must never throw
+  // uncaught out of a Server Action — that surfaces to the client as a
+  // rejected promise the Attendance Journal wasn't prepared for, which is
+  // exactly the "jumps to another screen" symptom reported. Catch it and
+  // hand back a normal { ok: false, error } response instead.
+  try {
+    await prisma.attendance.upsert({
+      where: { studentId_lessonSessionId: { studentId, lessonSessionId } },
+      create: {
+        studentId,
+        lessonSessionId,
+        status,
+        note: resolvedNote,
+        arrivalTime: resolvedArrivalTime,
+        teacherEarningAmount: 0, // fixed immediately below by recompute
+        lessonValueSnapshot: lessonValue,
+      },
+      update: { status, note: resolvedNote, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
+    });
 
-  await recomputeStudentEarnings(studentId, rate);
+    await recomputeStudentEarnings(studentId, rate);
 
-  await prisma.lessonSession.update({
-    where: { id: lessonSessionId },
-    data: { status: "COMPLETED" },
-  });
+    await prisma.lessonSession.update({
+      where: { id: lessonSessionId },
+      data: { status: "COMPLETED" },
+    });
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 
   // NOTE: deliberately NOT calling revalidatePath for the group detail page
   // itself. This action is invoked directly from the Attendance Journal
@@ -224,25 +244,32 @@ export async function bulkMarkAttendance(input: unknown) {
 
   const { rate, lessonValue } = await getLessonRateForGroup(lessonSession.groupId);
 
-  for (const mark of marks) {
-    const resolvedArrivalTime = mark.status === "LATE" ? (mark.arrivalTime ?? null) : null;
-    await prisma.attendance.upsert({
-      where: { studentId_lessonSessionId: { studentId: mark.studentId, lessonSessionId } },
-      create: {
-        studentId: mark.studentId,
-        lessonSessionId,
-        status: mark.status,
-        note: mark.note,
-        arrivalTime: resolvedArrivalTime,
-        teacherEarningAmount: 0,
-        lessonValueSnapshot: lessonValue,
-      },
-      update: { status: mark.status, note: mark.note, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
-    });
-    await recomputeStudentEarnings(mark.studentId, rate);
-  }
+  // See the comment in markAttendance() above: never let a DB error escape
+  // this action uncaught.
+  try {
+    for (const mark of marks) {
+      const resolvedArrivalTime = mark.status === "LATE" ? (mark.arrivalTime ?? null) : null;
+      const resolvedNote = mark.status === "EXCUSED_ABSENT" ? (mark.note ?? null) : null;
+      await prisma.attendance.upsert({
+        where: { studentId_lessonSessionId: { studentId: mark.studentId, lessonSessionId } },
+        create: {
+          studentId: mark.studentId,
+          lessonSessionId,
+          status: mark.status,
+          note: resolvedNote,
+          arrivalTime: resolvedArrivalTime,
+          teacherEarningAmount: 0,
+          lessonValueSnapshot: lessonValue,
+        },
+        update: { status: mark.status, note: resolvedNote, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
+      });
+      await recomputeStudentEarnings(mark.studentId, rate);
+    }
 
-  await prisma.lessonSession.update({ where: { id: lessonSessionId }, data: { status: "COMPLETED" } });
+    await prisma.lessonSession.update({ where: { id: lessonSessionId }, data: { status: "COMPLETED" } });
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 
   // See the comment in markAttendance() above — no revalidatePath for the
   // active group detail route, to avoid forcing a fragile server re-render

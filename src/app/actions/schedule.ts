@@ -6,9 +6,18 @@ import { serializeDecimals } from "@/lib/serialize";
 
 /**
  * Generates concrete LessonSession rows from a Group's recurring
- * ScheduleSlot template for the next `weeks` weeks, starting today.
- * Idempotent: relies on the (groupId, date) unique constraint and skips
- * dates that already have a session.
+ * ScheduleSlot template, covering everything from the group's startDate
+ * through `weeks` weeks ahead of today. Idempotent: relies on the
+ * (groupId, date) unique constraint and skips dates that already have a
+ * session, so it's safe to call on every page load.
+ *
+ * Deliberately starts at group.startDate rather than "today" — the very
+ * first version of this only ever generated forward from today, so any
+ * month that fell BETWEEN the group's creation and whenever self-heal first
+ * ran for it could be permanently missing its lesson days, showing "Bu oyda
+ * dars kunlari topilmadi" even though the group was clearly active that
+ * month. Re-running this is cheap: existing dates are skipped via a caught
+ * unique-constraint violation.
  */
 export async function generateLessonSessionsForGroup(groupId: string, weeks: number) {
   const group = await prisma.group.findUnique({
@@ -22,9 +31,12 @@ export async function generateLessonSessionsForGroup(groupId: string, weeks: num
   const horizon = new Date(today);
   horizon.setDate(horizon.getDate() + weeks * 7);
 
+  const start = new Date(group.startDate);
+  start.setHours(0, 0, 0, 0);
+
   const datesToCreate: { date: Date; startTime: string; endTime: string }[] = [];
 
-  for (let d = new Date(today); d <= horizon; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(start); d <= horizon; d.setDate(d.getDate() + 1)) {
     const day = d.getDay();
     for (const slot of group.scheduleSlots) {
       if (slot.dayOfWeek === day) {

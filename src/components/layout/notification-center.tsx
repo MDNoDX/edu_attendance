@@ -12,11 +12,44 @@ const POLL_INTERVAL_MS = 60_000;
 const SOUND_PREF_KEY = "nadiredu.notif.sound";
 const NOTIFIED_KEY_PREFIX = "nadiredu.notif.seen.";
 
+/**
+ * Browsers only let a page play audio after a real user gesture (click,
+ * keypress, tap) has unlocked the page's audio — an AudioContext created
+ * from a `setInterval` poll (no gesture in the call stack) starts in
+ * "suspended" state and never actually produces sound, even though no
+ * error is thrown. The previous implementation created a brand new
+ * AudioContext on every chime attempt, which meant it silently never
+ * unlocked. This module instead keeps ONE shared context, resumes it the
+ * moment any real user gesture happens anywhere on the page, and reuses
+ * that already-unlocked context for every later timer-triggered chime.
+ */
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  if (!sharedAudioCtx) {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return null;
+    sharedAudioCtx = new AudioCtx();
+  }
+  return sharedAudioCtx;
+}
+
+function unlockAudioOnce() {
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+}
+
 /** Two short ascending beeps via Web Audio — no audio asset needed, works offline. */
 function playChime() {
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new AudioCtx();
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    // If the shared context is still suspended (no gesture has unlocked it
+    // yet this session), attempt a resume anyway — harmless if it fails.
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const now = ctx.currentTime;
     [523.25, 659.25].forEach((freq, i) => {
       const osc = ctx.createOscillator();
@@ -30,7 +63,6 @@ function playChime() {
       osc.start(now + i * 0.14);
       osc.stop(now + i * 0.14 + 0.24);
     });
-    setTimeout(() => ctx.close(), 600);
   } catch {
     // Web Audio unavailable — fail silently, it's a non-critical enhancement.
   }
@@ -56,6 +88,17 @@ export function NotificationCenter() {
     if ("Notification" in window && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
+
+    // Unlock audio playback on the very first real user interaction with the
+    // page (click/keypress/touch) so later timer-triggered chimes can
+    // actually be heard — see the comment above playChime().
+    const events: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "touchstart"];
+    const unlock = () => {
+      unlockAudioOnce();
+      events.forEach((evt) => window.removeEventListener(evt, unlock));
+    };
+    events.forEach((evt) => window.addEventListener(evt, unlock, { once: true }));
+    return () => events.forEach((evt) => window.removeEventListener(evt, unlock));
   }, []);
 
   function persistNotified() {
@@ -129,6 +172,13 @@ export function NotificationCenter() {
     setSoundOn((prev) => {
       const next = !prev;
       window.localStorage.setItem(SOUND_PREF_KEY, next ? "1" : "0");
+      // This click is itself a user gesture, so it's a reliable place to
+      // unlock audio and immediately confirm to the teacher that sound
+      // actually works, rather than them finding out only later.
+      if (next) {
+        unlockAudioOnce();
+        playChime();
+      }
       return next;
     });
   }
