@@ -120,6 +120,11 @@ export const markAttendanceSchema = z.object({
   studentId: z.string().min(1),
   status: attendanceStatusEnum,
   note: z.string().optional(),
+  /** Actual clock-in time ("HH:mm"), only meaningful when status is LATE. */
+  arrivalTime: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "Vaqt HH:MM ko'rinishida bo'lishi kerak")
+    .optional(),
 });
 
 export const bulkMarkAttendanceSchema = z.object({
@@ -129,6 +134,10 @@ export const bulkMarkAttendanceSchema = z.object({
       studentId: z.string().min(1),
       status: attendanceStatusEnum,
       note: z.string().optional(),
+      arrivalTime: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/, "Vaqt HH:MM ko'rinishida bo'lishi kerak")
+        .optional(),
     }),
   ),
 });

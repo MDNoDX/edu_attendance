@@ -4,6 +4,8 @@ import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Lock, Check, X as XIcon, Clock, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn, formatUZS } from "@/lib/utils";
 import { markAttendance, getGroupAttendanceJournal } from "@/app/actions/attendance";
 
@@ -19,6 +22,7 @@ type AttendanceStatus = "PRESENT" | "EXCUSED_ABSENT" | "UNEXCUSED_ABSENT" | "LAT
 interface Mark {
   status: AttendanceStatus;
   note: string | null;
+  arrivalTime?: string | null;
   teacherEarningAmount: number;
 }
 
@@ -49,8 +53,28 @@ const STATUS_CONFIG: Record<
 
 const STATUS_OPTIONS: AttendanceStatus[] = ["PRESENT", "LATE", "EXCUSED_ABSENT", "UNEXCUSED_ABSENT"];
 
+// Hardcoded Uzbek weekday/month names instead of Intl.DateTimeFormat("uz-UZ", ...):
+// some server/browser runtimes only ship English ("small-icu") locale data, which
+// silently falls back to garbled output like "WE"/"SU" or "M07" instead of proper
+// Uzbek names — hardcoding removes any dependency on the runtime's locale data.
+const UZ_WEEKDAYS_SHORT = ["Ya", "Du", "Se", "Cho", "Pa", "Ju", "Sha"]; // index 0 = Sunday, matches Date#getDay()
+const UZ_MONTHS = [
+  "yanvar",
+  "fevral",
+  "mart",
+  "aprel",
+  "may",
+  "iyun",
+  "iyul",
+  "avgust",
+  "sentabr",
+  "oktabr",
+  "noyabr",
+  "dekabr",
+];
+
 function monthLabel(date: Date) {
-  return new Intl.DateTimeFormat("uz-UZ", { month: "long", year: "numeric" }).format(date);
+  return `${UZ_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 function dayNumber(date: string | Date) {
@@ -60,7 +84,12 @@ function dayNumber(date: string | Date) {
 
 function weekdayShort(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date;
-  return new Intl.DateTimeFormat("uz-UZ", { weekday: "short" }).format(d).slice(0, 2);
+  return UZ_WEEKDAYS_SHORT[d.getDay()];
+}
+
+function currentTimeHHMM() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
 /**
@@ -87,6 +116,7 @@ export function AttendanceJournal({
   const [sessions, setSessions] = useState(initialSessions);
   const [pending, startTransition] = useTransition();
   const [savingCell, setSavingCell] = useState<string | null>(null);
+  const [lateDialog, setLateDialog] = useState<{ sessionId: string; studentId: string; time: string } | null>(null);
 
   const monthDate = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -98,31 +128,66 @@ export function AttendanceJournal({
     const key = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
     setMonth(key);
     startTransition(async () => {
-      const data = await getGroupAttendanceJournal(groupId, next);
-      setSessions(data.sessions);
+      try {
+        const data = await getGroupAttendanceJournal(groupId, next);
+        setSessions(data.sessions);
+      } catch {
+        toast.error("Oyni yuklab bo'lmadi. Qaytadan urinib ko'ring.");
+      }
     });
   }
 
-  async function handleMark(sessionId: string, studentId: string, status: AttendanceStatus) {
+  async function handleMark(sessionId: string, studentId: string, status: AttendanceStatus, arrivalTime?: string) {
     const cellKey = `${sessionId}:${studentId}`;
     setSavingCell(cellKey);
-    const res = await markAttendance({ lessonSessionId: sessionId, studentId, status });
+    const res = await markAttendance({ lessonSessionId: sessionId, studentId, status, arrivalTime });
     if (!res.ok) {
       setSavingCell(null);
       toast.error(typeof res.error === "string" ? res.error : "Xatolik yuz berdi.");
       return;
     }
     // Marking one cell can shift the consecutive-miss streak and therefore
-    // the teacherEarningAmount of OTHER sessions for this student too (e.g.
-    // the 3rd consecutive miss zeroes earnings from that lesson onward). A
-    // local single-cell patch would leave those other cells and the
-    // per-student / group totals stale, so re-pull the whole month from the
-    // server — this is the single source of truth the recompute wrote to.
+    // the teacherEarningAmount of OTHER sessions for this student too (a run
+    // of 3+ consecutive misses zeroes the WHOLE run retroactively). A local
+    // single-cell patch would leave those other cells and the per-student /
+    // group totals stale, so re-pull the whole month from the server — this
+    // is the single source of truth the recompute wrote to.
+    //
+    // Wrapped in try/catch: if this refetch ever fails (a transient
+    // serverless DB hiccup, etc.), we show a toast and keep the previous
+    // grid on screen rather than letting the error bubble up to the nearest
+    // error boundary, which would swap the whole page out — exactly the
+    // "jumps to another screen" symptom this is meant to prevent.
     startTransition(async () => {
-      const data = await getGroupAttendanceJournal(groupId, monthDate);
-      setSessions(data.sessions);
-      setSavingCell(null);
+      try {
+        const data = await getGroupAttendanceJournal(groupId, monthDate);
+        setSessions(data.sessions);
+      } catch {
+        toast.error("Yangilanmadi — internet aloqasini tekshirib, sahifani yangilang.");
+      } finally {
+        setSavingCell(null);
+      }
     });
+  }
+
+  function onStatusPick(sessionId: string, studentId: string, status: AttendanceStatus) {
+    if (status === "LATE") {
+      const existing = sessions.find((s) => s.id === sessionId)?.marks[studentId];
+      const session = sessions.find((s) => s.id === sessionId);
+      setLateDialog({
+        sessionId,
+        studentId,
+        time: existing?.arrivalTime || session?.startTime || currentTimeHHMM(),
+      });
+      return;
+    }
+    handleMark(sessionId, studentId, status);
+  }
+
+  function confirmLateMark() {
+    if (!lateDialog) return;
+    handleMark(lateDialog.sessionId, lateDialog.studentId, "LATE", lateDialog.time);
+    setLateDialog(null);
   }
 
   const groupTotal = useMemo(() => {
@@ -251,12 +316,19 @@ export function AttendanceJournal({
                           </td>
                         );
                       }
+                      const tooltip =
+                        mark?.status === "LATE" && mark.arrivalTime
+                          ? `Kechikdi — ${mark.arrivalTime}`
+                          : mark
+                            ? STATUS_CONFIG[mark.status].label
+                            : undefined;
                       return (
                         <td key={s.id} className="px-1 py-2 text-center">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <button
                                 disabled={savingCell === cellKey}
+                                title={tooltip}
                                 className={cn(
                                   "mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-colors",
                                   mark ? STATUS_CONFIG[mark.status].className : "bg-muted text-muted-foreground/50 hover:bg-accent",
@@ -277,13 +349,16 @@ export function AttendanceJournal({
                                 const cfg = STATUS_CONFIG[status];
                                 const Icon = cfg.icon;
                                 return (
-                                  <DropdownMenuItem key={status} onClick={() => handleMark(s.id, student.id, status)}>
+                                  <DropdownMenuItem key={status} onClick={() => onStatusPick(s.id, student.id, status)}>
                                     <Icon className="mr-2 h-4 w-4" /> {cfg.label}
                                   </DropdownMenuItem>
                                 );
                               })}
                             </DropdownMenuContent>
                           </DropdownMenu>
+                          {mark?.status === "LATE" && mark.arrivalTime && (
+                            <div className="mt-0.5 text-[9px] leading-none text-muted-foreground">{mark.arrivalTime}</div>
+                          )}
                         </td>
                       );
                     })}
@@ -309,6 +384,25 @@ export function AttendanceJournal({
           </table>
         </div>
       )}
+
+      <Dialog open={!!lateDialog} onOpenChange={(open) => !open && setLateDialog(null)}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Kelgan vaqtini kiriting</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Aynan qaysi vaqtda keldi</Label>
+            <Input
+              type="time"
+              value={lateDialog?.time ?? ""}
+              onChange={(e) => setLateDialog((prev) => (prev ? { ...prev, time: e.target.value } : prev))}
+            />
+          </div>
+          <DialogFooter>
+            <Button onClick={confirmLateMark}>Tasdiqlash</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

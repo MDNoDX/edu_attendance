@@ -11,6 +11,7 @@ import {
   type AttendanceMark,
 } from "@/lib/attendance-payment";
 import { serializeDecimals } from "@/lib/serialize";
+import { generateLessonSessionsForGroup } from "@/app/actions/schedule";
 import type { Prisma } from "@prisma/client";
 
 /** Resolves the effective per-lesson teacher rate for a group (override or the teacher's default). */
@@ -97,6 +98,17 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
   });
   if (!group) throw new Error("NOT_FOUND");
 
+  // Self-heal: LessonSession rows are only ever generated 8 weeks ahead at
+  // group-creation time, with nothing extending them afterwards. An older
+  // group can silently run out of upcoming sessions, making the journal show
+  // "no lesson days this month" for a month that should clearly have
+  // classes. This call is idempotent (skips dates that already exist), so
+  // it's safe to run on every journal load — it just tops up the next 8
+  // weeks from today if anything's missing.
+  if (group.status === "ACTIVE") {
+    await generateLessonSessionsForGroup(groupId, 8);
+  }
+
   const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
   const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
 
@@ -125,7 +137,12 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
       marks: Object.fromEntries(
         s.attendances.map((a) => [
           a.studentId,
-          { status: a.status, note: a.note, teacherEarningAmount: Number(a.teacherEarningAmount) },
+          {
+            status: a.status,
+            note: a.note,
+            arrivalTime: a.arrivalTime,
+            teacherEarningAmount: Number(a.teacherEarningAmount),
+          },
         ]),
       ),
     })),
@@ -136,7 +153,9 @@ export async function markAttendance(input: unknown) {
   const session = await requireSession();
   const parsed = markAttendanceSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: parsed.error.flatten() };
-  const { lessonSessionId, studentId, status, note } = parsed.data;
+  const { lessonSessionId, studentId, status, note, arrivalTime } = parsed.data;
+  // arrivalTime only makes sense for a LATE mark — ignore it for any other status.
+  const resolvedArrivalTime = status === "LATE" ? (arrivalTime ?? null) : null;
 
   const lessonSession = await prisma.lessonSession.findFirst({
     where: { id: lessonSessionId, userId: session.sub },
@@ -158,10 +177,11 @@ export async function markAttendance(input: unknown) {
       lessonSessionId,
       status,
       note,
+      arrivalTime: resolvedArrivalTime,
       teacherEarningAmount: 0, // fixed immediately below by recompute
       lessonValueSnapshot: lessonValue,
     },
-    update: { status, note, lessonValueSnapshot: lessonValue },
+    update: { status, note, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
   });
 
   await recomputeStudentEarnings(studentId, rate);
@@ -205,6 +225,7 @@ export async function bulkMarkAttendance(input: unknown) {
   const { rate, lessonValue } = await getLessonRateForGroup(lessonSession.groupId);
 
   for (const mark of marks) {
+    const resolvedArrivalTime = mark.status === "LATE" ? (mark.arrivalTime ?? null) : null;
     await prisma.attendance.upsert({
       where: { studentId_lessonSessionId: { studentId: mark.studentId, lessonSessionId } },
       create: {
@@ -212,10 +233,11 @@ export async function bulkMarkAttendance(input: unknown) {
         lessonSessionId,
         status: mark.status,
         note: mark.note,
+        arrivalTime: resolvedArrivalTime,
         teacherEarningAmount: 0,
         lessonValueSnapshot: lessonValue,
       },
-      update: { status: mark.status, note: mark.note, lessonValueSnapshot: lessonValue },
+      update: { status: mark.status, note: mark.note, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
     });
     await recomputeStudentEarnings(mark.studentId, rate);
   }

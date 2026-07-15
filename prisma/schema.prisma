@@ -264,6 +264,11 @@ model Attendance {
   status          AttendanceStatus
   note            String?
 
+  /// Actual clock-in time for a LATE mark (e.g. "18:15"), so a teacher can
+  /// record exactly when the student showed up, not just the status.
+  /// Null for every other status.
+  arrivalTime String?
+
   /// Amount credited to the teacher for THIS attendance record, already
   /// adjusted by the consecutive-absence cutoff rule at the time it was
   /// computed. 0 for absence statuses past the cutoff.

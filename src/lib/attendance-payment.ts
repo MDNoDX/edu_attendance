@@ -9,7 +9,9 @@
  *      lessonValue = monthlyPrice / lessonsPerMonth      (720000 / 12 = 60000)
  *
  * Independently, a teacher earns a fixed per-lesson share (e.g. 18 500 so'm).
- * The teacher's payout, in words, from the spec:
+ * The teacher's payout, in words, from the spec (updated per the teacher's
+ * explicit correction — the cutoff now zeroes the WHOLE consecutive-miss
+ * run retroactively, not just the lessons from the 3rd miss onward):
  *
  *   1. Every time the student is PRESENT (or LATE — physically attended),
  *      the teacher earns the full lesson rate. This always resets any
@@ -17,27 +19,35 @@
  *
  *   2. If the student is ABSENT (excused or unexcused — both count the same
  *      way for this rule), the teacher STILL earns the full rate for the
- *      1st and 2nd consecutive absence. Only starting from the 3RD
- *      consecutive absence onward does the teacher's payout for that lesson
- *      become zero. The cutoff stays in effect for every subsequent absence
- *      until the student attends again, at which point the streak resets
- *      and full payouts resume immediately.
+ *      1st and 2nd consecutive absence — no deduction at all as long as the
+ *      streak stays below 3.
  *
- *   Verified against the spec's worked examples:
+ *   3. The moment a streak reaches the 3rd consecutive absence, the payout
+ *      for ALL THREE of those lessons becomes zero — including the 1st and
+ *      2nd, which had already been marked as paid. In other words, hitting
+ *      the cutoff doesn't just zero the newest lesson going forward, it
+ *      retroactively wipes out the entire run of misses that led up to it.
+ *      A 4th consecutive miss zeroes all 4; a 5th zeroes all 5; and so on —
+ *      every miss in an unbroken run of 3+ pays 0 once the run reaches 3.
  *
- *   Example 1 — a student who stops coming:
- *     Keldi, Kelmadi, Kelmadi, Kelmadi, Kelmadi, Kelmadi
- *     (Present, Absent x5)
- *     Earnings for the 5 absences: 18500, 18500, 0, 0, 0
- *       -> absence #1 (streak=1): still paid
- *       -> absence #2 (streak=2): still paid
- *       -> absence #3 (streak=3): CUTOFF -> 0
- *       -> absence #4 (streak=4): 0
- *       -> absence #5 (streak=5): 0
+ *   4. The instant the student attends again (PRESENT or LATE), the streak
+ *      resets to zero and full payouts resume immediately from that lesson.
  *
- *   Example 2 — a student who misses on and off, never 3 in a row:
+ *   Worked examples (per the teacher's own numbers, rate = 18 500):
+ *
+ *   Example A — exactly 3 consecutive misses:
+ *     Keldi, Kelmadi, Kelmadi, Kelmadi
+ *     Earnings: 18500, 0, 0, 0
+ *       -> once the streak hits 3, ALL 3 misses pay 0 (18500*3 not paid),
+ *          not just the 3rd one.
+ *
+ *   Example B — exactly 4 consecutive misses:
+ *     Keldi, Kelmadi, Kelmadi, Kelmadi, Kelmadi
+ *     Earnings: 18500, 0, 0, 0, 0
+ *       -> all 4 misses pay 0 (18500*4 not paid).
+ *
+ *   Example C — a student who misses on and off, never 3 in a row:
  *     Keldi, Kelmadi, Keldi, Kelmadi, Kelmadi, Keldi
- *     (Present, Absent, Present, Absent, Absent, Present)
  *     "hech qanday chegirma bo'lmaydi" — no deduction at all, because every
  *     PRESENT resets the streak before it ever reaches 3.
  *
@@ -89,9 +99,13 @@ export function isMiss(status: AttendanceMark): boolean {
 }
 
 /**
- * Computes the teacher earning for a single new attendance mark, given the
- * student's consecutive-miss streak BEFORE this lesson (0 if the previous
- * lesson was attended or this is the first lesson on record).
+ * Computes the teacher earning for a single new attendance mark IN ISOLATION,
+ * given the student's consecutive-miss streak BEFORE this lesson. This does
+ * NOT apply the retroactive whole-streak-zero rule (it can't — that requires
+ * rewriting earlier lessons too, which only `computeEarningsForHistory` can
+ * do with the full history in hand). Useful only for streak bookkeeping;
+ * `computeEarningsForHistory` is the single source of truth for what a
+ * teacher actually gets paid.
  */
 export function computeLessonEarning(
   status: AttendanceMark,
@@ -103,9 +117,10 @@ export function computeLessonEarning(
     return { earning: lessonRate, streakAfter: 0 };
   }
 
-  // A miss (excused or unexcused) extends the streak.
+  // A miss (excused or unexcused) extends the streak. This lesson-in-isolation
+  // view pays in full below the cutoff; once the caller's streak reaches the
+  // cutoff, computeEarningsForHistory is what actually zeroes the whole run.
   const streakAfter = streakBefore + 1;
-  // The 1st and 2nd consecutive miss still pay in full; the 3rd+ pays 0.
   const earning = streakAfter >= CONSECUTIVE_MISS_CUTOFF ? 0 : lessonRate;
   return { earning, streakAfter };
 }
@@ -113,25 +128,50 @@ export function computeLessonEarning(
 /**
  * Walks a student's full chronological attendance history for a group and
  * recomputes the teacher earning for every lesson, applying the
- * consecutive-miss cutoff rule. Use this to (re)build earnings when
- * back-filling history, auditing, or displaying a breakdown to the teacher.
+ * consecutive-miss cutoff rule. This is the single source of truth for
+ * teacher payouts — call it (and persist every entry's `teacherEarning`)
+ * any time attendance history changes, since a single new mark can change
+ * the payout of EARLIER lessons too (see below).
+ *
+ * The cutoff is retroactive: as soon as a run of consecutive misses reaches
+ * CONSECUTIVE_MISS_CUTOFF (3), every lesson in that run — from its very
+ * first miss — pays 0, not just the lessons from the 3rd miss onward. A run
+ * of exactly 3 misses loses all 3; a run of 4 loses all 4; and so on. A run
+ * of only 1 or 2 misses is unaffected and still pays in full.
  */
 export function computeEarningsForHistory(
   history: AttendanceHistoryEntry[],
   lessonRate: number,
 ): ComputedEarningEntry[] {
-  let streak = 0;
   const results: ComputedEarningEntry[] = [];
+  let streak = 0;
+  /** Index in `results` where the CURRENT unbroken run of misses began (-1 if not in a run). */
+  let runStart = -1;
 
   for (const entry of history) {
-    const { earning, streakAfter } = computeLessonEarning(entry.status, streak, lessonRate);
-    results.push({
-      ...entry,
-      teacherEarning: earning,
-      streakAfter,
-      isPastCutoff: isMiss(entry.status) && streakAfter >= CONSECUTIVE_MISS_CUTOFF,
-    });
-    streak = streakAfter;
+    if (isAttended(entry.status)) {
+      streak = 0;
+      runStart = -1;
+      results.push({ ...entry, teacherEarning: lessonRate, streakAfter: 0, isPastCutoff: false });
+      continue;
+    }
+
+    // A miss: extend (or start) the current run.
+    if (runStart === -1) runStart = results.length;
+    streak += 1;
+
+    if (streak < CONSECUTIVE_MISS_CUTOFF) {
+      // Still within the grace period — pays in full, for now. This may get
+      // retroactively zeroed below if the run keeps going and hits the cutoff.
+      results.push({ ...entry, teacherEarning: lessonRate, streakAfter: streak, isPastCutoff: false });
+    } else {
+      // Cutoff reached (or already passed, for the 4th+ miss in this run):
+      // this lesson pays 0, and so does every earlier lesson in this same run.
+      results.push({ ...entry, teacherEarning: 0, streakAfter: streak, isPastCutoff: true });
+      for (let i = runStart; i < results.length - 1; i++) {
+        results[i] = { ...results[i], teacherEarning: 0, isPastCutoff: true };
+      }
+    }
   }
 
   return results;
@@ -140,11 +180,10 @@ export function computeEarningsForHistory(
 /**
  * Given the CURRENT consecutive-miss streak for a student (computed from
  * their prior attendance records, most recent last), returns the earning for
- * a NEW attendance mark being recorded right now. Server actions call this
- * at mark-time so we never have to recompute the whole history on every
- * write — only the running streak (stored redundantly on the student's most
- * recent attendance row, or recomputed cheaply via a bounded lookback query)
- * needs to be known.
+ * a NEW attendance mark being recorded right now, IN ISOLATION (see the
+ * caveat on `computeLessonEarning` above — this cannot retroactively rewrite
+ * earlier lessons, so `computeEarningsForHistory` must still be used to
+ * persist the final, authoritative earnings after every write).
  */
 export function computeNewMarkEarning(
   newStatus: AttendanceMark,
