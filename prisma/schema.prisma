@@ -1,0 +1,332 @@
+// ============================================================================
+// Ustoz Akademiyasi — single-role (Teacher) attendance & earnings tracker.
+// Every teacher fully self-manages their own courses, groups, students,
+// schedule, attendance and payments. There is no admin/oversight role —
+// each User's data is completely isolated from every other User's data.
+// PostgreSQL. Designed for Neon / Supabase + Vercel deployment.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------------------
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  FINISHED
+}
+
+enum GroupStatus {
+  ACTIVE
+  FINISHED
+  PAUSED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  EXCUSED_ABSENT // sababli kelmadi
+  UNEXCUSED_ABSENT // sababsiz kelmadi
+  LATE // kechikdi
+}
+
+enum LessonSessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELED
+}
+
+enum PaymentStatus {
+  PAID
+  PARTIAL
+  UNPAID
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  OTHER
+}
+
+// ----------------------------------------------------------------------------
+// USER — a single self-registering Teacher account. Everything below is
+// scoped to a userId and never visible to any other user.
+// ----------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  fullName     String
+  email        String?  @unique
+  phone        String?
+  photoUrl     String?
+
+  /// Default per-attended-lesson earning share in UZS, e.g. 18500.
+  /// Can be overridden per-group via Group.teacherLessonRateOverride.
+  defaultLessonRate Decimal @default(0) @db.Decimal(14, 2)
+  specialization    String?
+  bio               String?
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  courses        Course[]
+  groups         Group[]
+  lessonSessions LessonSession[]
+  students       Student[]
+  payments       Payment[]
+
+  @@map("users")
+}
+
+// ----------------------------------------------------------------------------
+// ACADEMIC STRUCTURE: Courses (price templates) and Groups (actual cohorts)
+// ----------------------------------------------------------------------------
+
+model Course {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name           String
+  /// Free-text subject/label, e.g. "Ingliz tili", "Fon.A 2x1,5".
+  subject        String?
+  description    String?
+  durationMonths Int
+  /// Monthly tuition price in UZS, e.g. 720000.
+  monthlyPrice   Decimal @db.Decimal(14, 2)
+  /// How many lessons are held per month, e.g. 12. Used to derive the
+  /// per-lesson value: monthlyPrice / lessonsPerMonth.
+  lessonsPerMonth Int
+  isActive        Boolean @default(true)
+
+  groups   Group[]
+  students Student[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("courses")
+}
+
+/// A concrete class/cohort of students following one Course, meeting on a
+/// recurring weekly schedule in a named room.
+model Group {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+
+  name     String
+  /// Plain text room label (e.g. "10-xona") — no separate room booking
+  /// system, since each teacher's schedule is independent of every other
+  /// teacher's.
+  roomName String
+
+  capacity  Int         @default(15)
+  status    GroupStatus @default(ACTIVE)
+  startDate DateTime
+  endDate   DateTime?
+
+  /// Optional override of the teacher's default per-lesson rate for this
+  /// specific group.
+  teacherLessonRateOverride Decimal? @db.Decimal(14, 2)
+
+  students       Student[]
+  scheduleSlots  ScheduleSlot[]
+  lessonSessions LessonSession[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+  @@map("groups")
+}
+
+/// The recurring weekly template for a group's lessons (e.g. Mon/Wed/Fri 14:00-15:30).
+/// LessonSession rows are generated from this template for each concrete date.
+model ScheduleSlot {
+  id        String @id @default(cuid())
+  groupId   String
+  group     Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  dayOfWeek Int // 0 = Sunday ... 6 = Saturday
+  startTime String // "14:00"
+  endTime   String // "15:30"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([groupId])
+  @@map("schedule_slots")
+}
+
+/// A concrete, date-specific lesson occurrence. Attendance is always recorded
+/// against a LessonSession, never directly against a Group.
+model LessonSession {
+  id      String @id @default(cuid())
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId String
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  date      DateTime            @db.Date
+  startTime String
+  endTime   String
+  status    LessonSessionStatus @default(SCHEDULED)
+
+  attendances Attendance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([groupId, date])
+  @@index([userId, date])
+  @@map("lesson_sessions")
+}
+
+// ----------------------------------------------------------------------------
+// STUDENTS
+// ----------------------------------------------------------------------------
+
+model Student {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName      String
+  lastName       String
+  middleName     String? // Sharif
+  gender         Gender
+  birthDate      DateTime      @db.Date
+  phone          String?
+  parentPhone    String
+  address        String?
+  passportOrIdNo String?
+  photoUrl       String?
+  note           String?
+  status         StudentStatus @default(ACTIVE)
+  startDate      DateTime      @db.Date
+
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  groupId  String
+  group    Group  @relation(fields: [groupId], references: [id], onDelete: Restrict)
+
+  attendances Attendance[]
+  payments    Payment[]
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([groupId])
+  @@index([courseId])
+  @@index([status])
+  @@index([lastName, firstName])
+  @@map("students")
+}
+
+// ----------------------------------------------------------------------------
+// ATTENDANCE (core business logic lives in src/lib/attendance-payment.ts)
+// ----------------------------------------------------------------------------
+
+model Attendance {
+  id              String           @id @default(cuid())
+  studentId       String
+  student         Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonSessionId String
+  lessonSession   LessonSession    @relation(fields: [lessonSessionId], references: [id], onDelete: Cascade)
+  status          AttendanceStatus
+  note            String?
+
+  /// Amount credited to the teacher for THIS attendance record, already
+  /// adjusted by the consecutive-absence cutoff rule at the time it was
+  /// computed. 0 for absence statuses past the cutoff.
+  teacherEarningAmount Decimal @default(0) @db.Decimal(14, 2)
+
+  /// Value of one lesson for the student's billing (monthlyPrice / lessonsPerMonth),
+  /// snapshotted at mark-time for historical accuracy even if price changes later.
+  lessonValueSnapshot Decimal @default(0) @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, lessonSessionId])
+  @@index([studentId])
+  @@index([lessonSessionId])
+  @@index([status])
+  @@map("attendances")
+}
+
+// ----------------------------------------------------------------------------
+// PAYMENTS
+// ----------------------------------------------------------------------------
+
+model Payment {
+  id     String  @id @default(cuid())
+  userId String
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  /// Billing period, first day of month, e.g. 2026-07-01.
+  billingMonth DateTime      @db.Date
+  amountDue    Decimal       @db.Decimal(14, 2)
+  amountPaid   Decimal       @default(0) @db.Decimal(14, 2)
+  status       PaymentStatus @default(UNPAID)
+
+  transactions PaymentTransaction[]
+
+  note      String?
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([studentId, billingMonth])
+  @@index([userId])
+  @@index([status])
+  @@index([billingMonth])
+  @@map("payments")
+}
+
+model PaymentTransaction {
+  id            String        @id @default(cuid())
+  paymentId     String
+  payment       Payment       @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  amount        Decimal       @db.Decimal(14, 2)
+  method        PaymentMethod @default(CASH)
+  receiptNumber String?
+  note          String?
+  paidAt        DateTime      @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+  @@map("payment_transactions")
+}
