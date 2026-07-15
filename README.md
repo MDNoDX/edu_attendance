@@ -1,4 +1,4 @@
-# Ustoz Akademiyasi
+# NadirEdu
 
 O'qituvchining o'zi uchun davomat va daromad hisob-kitob tizimi.
 Har bir o'qituvchi o'z hisobini yaratadi va faqat o'z guruhlari, studentlari, jadvali,
@@ -26,8 +26,10 @@ hisobini ochadi, so'ng faqat o'ziga tegishli ma'lumotlarni ko'radi va boshqaradi
   qulflangan (lock ikonkasi) holatda ko'rinadi.
 - **Studentlarim** — har bir guruhga biriktirilgan studentlar ro'yxati.
 - **Jadval** — kunlik/haftalik/oylik dars jadvali.
-- **To'lovlar** — studentlarning oylik to'lovlari va o'qituvchining o'z daromadi (bugun/hafta/oy/yil).
-- **Hisobot** — guruh va davrni tanlab, qaysi ustunlar chiqishini o'zi belgilab PDF/Excel yuklab olish.
+- **To'lov va hisobot** — bitta joyda: umumiy studentlar, oylik kutilayotgan summa, tanlangan davrda
+  qancha ulush ishlanganini ko'rish (barcha guruhlar / bitta guruh / bitta student bo'yicha), va
+  qaysi ustunlar chiqishini o'zi belgilab PDF/Excel yuklab olish — ekrandagi raqamlar bilan fayldagilar
+  har doim mos keladi.
 - **Profil** — shaxsiy ma'lumotlar, standart dars ulushi, parolni almashtirish.
 
 ## Eng muhim biznes qoidasi: davomat asosida o'qituvchi daromadi

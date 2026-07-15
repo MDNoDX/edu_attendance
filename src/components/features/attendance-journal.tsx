@@ -107,19 +107,42 @@ export function AttendanceJournal({
     const cellKey = `${sessionId}:${studentId}`;
     setSavingCell(cellKey);
     const res = await markAttendance({ lessonSessionId: sessionId, studentId, status });
-    setSavingCell(null);
     if (!res.ok) {
+      setSavingCell(null);
       toast.error(typeof res.error === "string" ? res.error : "Xatolik yuz berdi.");
       return;
     }
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === sessionId
-          ? { ...s, marks: { ...s.marks, [studentId]: { status, note: null, teacherEarningAmount: 0 } } }
-          : s,
-      ),
-    );
+    // Marking one cell can shift the consecutive-miss streak and therefore
+    // the teacherEarningAmount of OTHER sessions for this student too (e.g.
+    // the 3rd consecutive miss zeroes earnings from that lesson onward). A
+    // local single-cell patch would leave those other cells and the
+    // per-student / group totals stale, so re-pull the whole month from the
+    // server — this is the single source of truth the recompute wrote to.
+    startTransition(async () => {
+      const data = await getGroupAttendanceJournal(groupId, monthDate);
+      setSessions(data.sessions);
+      setSavingCell(null);
+    });
   }
+
+  const groupTotal = useMemo(() => {
+    let present = 0;
+    let late = 0;
+    let excused = 0;
+    let unexcused = 0;
+    let earned = 0;
+    for (const s of sessions) {
+      for (const studentId of Object.keys(s.marks)) {
+        const mark = s.marks[studentId];
+        if (mark.status === "PRESENT") present += 1;
+        if (mark.status === "LATE") late += 1;
+        if (mark.status === "EXCUSED_ABSENT") excused += 1;
+        if (mark.status === "UNEXCUSED_ABSENT") unexcused += 1;
+        earned += mark.teacherEarningAmount;
+      }
+    }
+    return { present, late, excused, unexcused, earned };
+  }, [sessions]);
 
   function studentSummary(studentId: string) {
     let present = 0;
@@ -269,6 +292,20 @@ export function AttendanceJournal({
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-border bg-muted/50 font-medium">
+                <td className="sticky left-0 z-10 border-r border-border bg-muted/50 px-3 py-2">
+                  Guruh bo&apos;yicha jami
+                </td>
+                <td colSpan={sessions.length} className="px-3 py-2 text-xs text-muted-foreground">
+                  Keldi: <strong className="text-foreground">{groupTotal.present}</strong> · Kechikdi:{" "}
+                  <strong className="text-foreground">{groupTotal.late}</strong> · Sababli:{" "}
+                  <strong className="text-foreground">{groupTotal.excused}</strong> · Sababsiz:{" "}
+                  <strong className="text-foreground">{groupTotal.unexcused}</strong>
+                </td>
+                <td className="px-3 py-2 text-right">{formatUZS(groupTotal.earned)}</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}

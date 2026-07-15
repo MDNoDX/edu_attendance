@@ -4,7 +4,6 @@ import {
   Layers,
   BookOpen,
   CalendarDays,
-  Wallet,
   BarChart3,
   UserCircle,
   type LucideIcon,
@@ -26,8 +25,7 @@ export function getNavItems(): NavItem[] {
     { label: "Studentlarim", href: "/dashboard/students", icon: Users },
     { label: "Kurslarim", href: "/dashboard/courses", icon: BookOpen },
     { label: "Jadval", href: "/dashboard/schedule", icon: CalendarDays },
-    { label: "To'lovlar", href: "/dashboard/payments", icon: Wallet },
-    { label: "Hisobot", href: "/dashboard/reports", icon: BarChart3 },
+    { label: "To'lov va hisobot", href: "/dashboard/reports", icon: BarChart3 },
     { label: "Profil", href: "/dashboard/profile", icon: UserCircle },
   ];
 }

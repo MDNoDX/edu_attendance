@@ -48,13 +48,13 @@ export function SignupForm() {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="fullName">Ism-familiya</Label>
-        <Input id="fullName" autoComplete="name" placeholder="masalan: Aziza Karimova" {...register("fullName")} />
+        <Input id="fullName" autoComplete="name" {...register("fullName")} />
         {errors.fullName && <p className="text-xs text-destructive">{errors.fullName.message}</p>}
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="username">Login</Label>
-        <Input id="username" autoComplete="username" placeholder="masalan: aziza_teacher" {...register("username")} />
+        <Input id="username" autoComplete="username" {...register("username")} />
         {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
       </div>
 
@@ -100,7 +100,6 @@ export function SignupForm() {
           type="number"
           min={0}
           step={500}
-          placeholder="masalan: 18500"
           {...register("defaultLessonRate")}
         />
         <p className="text-xs text-muted-foreground">
@@ -114,7 +113,7 @@ export function SignupForm() {
 
       <div className="space-y-2">
         <Label htmlFor="specialization">Mutaxassislik</Label>
-        <Input id="specialization" placeholder="masalan: Ingliz tili" {...register("specialization")} />
+        <Input id="specialization" {...register("specialization")} />
       </div>
 
       {serverError && (

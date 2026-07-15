@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { GraduationCap } from "lucide-react";
+import { Logo } from "@/components/logo";
 import { cn } from "@/lib/utils";
 import { APP_NAME } from "@/lib/constants";
 import { getNavItems } from "@/components/layout/nav-config";
@@ -14,9 +14,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-          <GraduationCap className="h-5 w-5" />
-        </div>
+        <Logo size={32} />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold leading-tight">{APP_NAME}</p>
           <p className="truncate text-xs text-muted-foreground">O&apos;qituvchi paneli</p>

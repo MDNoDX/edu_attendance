@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { GraduationCap } from "lucide-react";
+import { Logo } from "@/components/logo";
 import { SignupForm } from "./signup-form";
 import { APP_NAME } from "@/lib/constants";
 
@@ -11,9 +11,7 @@ export default function SignupPage() {
 
       <div className="glass relative w-full max-w-md rounded-2xl p-8 shadow-xl">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <GraduationCap className="h-6 w-6" />
-          </div>
+          <Logo size={48} className="mb-3" />
           <h1 className="text-xl font-semibold tracking-tight">{APP_NAME}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             O&apos;z hisobingizni yarating — guruhlaringizni, davomatni va hisob-kitobingizni

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, FileSpreadsheet } from "lucide-react";
+import { toast } from "sonner";
+import { FileText, FileSpreadsheet, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,6 +15,24 @@ interface GroupOption {
   name: string;
 }
 
+/** Fetch+blob download so a failed export shows a toast instead of the browser silently saving a broken file. */
+async function downloadReport(url: string, filename: string) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error ?? "Hisobotni yuklab bo'lmadi.");
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 /**
  * Self-service export: the teacher picks a group (or every group), a
  * period, and exactly which columns should appear — per the product
@@ -22,6 +41,7 @@ interface GroupOption {
 export function TeacherReports({ groups }: { groups: GroupOption[] }) {
   const [groupId, setGroupId] = useState<string>("__all__");
   const [period, setPeriod] = useState("monthly");
+  const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
   const [selectedFields, setSelectedFields] = useState<string[]>(
     ATTENDANCE_REPORT_FIELDS.filter((f) => f.defaultSelected).map((f) => f.key),
   );
@@ -34,6 +54,22 @@ export function TeacherReports({ groups }: { groups: GroupOption[] }) {
     const params = new URLSearchParams({ period, format, fields: selectedFields.join(",") });
     if (groupId !== "__all__") params.set("groupId", groupId);
     return `/api/reports/teacher?${params.toString()}`;
+  }
+
+  async function handleExport(format: "xlsx" | "pdf") {
+    if (selectedFields.length === 0) {
+      toast.error("Kamida bitta ustun tanlang.");
+      return;
+    }
+    setExporting(format);
+    try {
+      await downloadReport(buildUrl(format), `hisobot-${period}.${format}`);
+      toast.success("Hisobot yuklandi.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Xatolik yuz berdi.");
+    } finally {
+      setExporting(null);
+    }
   }
 
   return (
@@ -84,15 +120,13 @@ export function TeacherReports({ groups }: { groups: GroupOption[] }) {
         </div>
 
         <div className="flex gap-2">
-          <Button asChild variant="outline" disabled={selectedFields.length === 0}>
-            <a href={buildUrl("xlsx")} download>
-              <FileSpreadsheet className="h-4 w-4" /> Excel
-            </a>
+          <Button variant="outline" disabled={exporting !== null} onClick={() => handleExport("xlsx")}>
+            {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            Excel
           </Button>
-          <Button asChild disabled={selectedFields.length === 0}>
-            <a href={buildUrl("pdf")} download>
-              <FileText className="h-4 w-4" /> PDF
-            </a>
+          <Button disabled={exporting !== null} onClick={() => handleExport("pdf")}>
+            {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            PDF
           </Button>
         </div>
       </CardContent>

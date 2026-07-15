@@ -8,7 +8,8 @@ import { Plus, Trash2, Pencil, Search, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { PhotoUpload } from "@/components/features/photo-upload";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -34,6 +35,7 @@ interface StudentRow {
   parentPhone: string;
   status: string;
   startDate: string | Date;
+  photoUrl?: string | null;
   course: { id: string; name: string };
   group: { id: string; name: string; roomName: string };
 }
@@ -51,6 +53,15 @@ export function StudentsManager({
   const [total, setTotal] = useState(initialTotal);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [groupFilter, setGroupFilter] = useState<string>("ALL");
+
+  const allGroups = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of courses) {
+      for (const g of c.groups) map.set(g.id, g.name);
+    }
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [courses]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<StudentRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StudentRow | null>(null);
@@ -80,14 +91,30 @@ export function StudentsManager({
     });
   }
 
+  function currentFilters(overrides: Partial<{ search: string; status: string; groupId: string }> = {}) {
+    const nextSearch = overrides.search ?? search;
+    const nextStatus = overrides.status ?? statusFilter;
+    const nextGroup = overrides.groupId ?? groupFilter;
+    return {
+      search: nextSearch,
+      status: nextStatus === "ALL" ? undefined : (nextStatus as never),
+      groupId: nextGroup === "ALL" ? undefined : nextGroup,
+    };
+  }
+
   function onSearchChange(value: string) {
     setSearch(value);
-    refetch({ search: value, status: statusFilter === "ALL" ? undefined : (statusFilter as never) });
+    refetch(currentFilters({ search: value }));
   }
 
   function onStatusFilterChange(value: string) {
     setStatusFilter(value);
-    refetch({ search, status: value === "ALL" ? undefined : (value as never) });
+    refetch(currentFilters({ status: value }));
+  }
+
+  function onGroupFilterChange(value: string) {
+    setGroupFilter(value);
+    refetch(currentFilters({ groupId: value }));
   }
 
   async function onCreate(data: StudentInput) {
@@ -100,7 +127,7 @@ export function StudentsManager({
     toast.success("Student qo'shildi.");
     setCreateOpen(false);
     createForm.reset({ status: "ACTIVE" });
-    refetch({ search, status: statusFilter === "ALL" ? undefined : (statusFilter as never) });
+    refetch(currentFilters());
   }
 
   function openEdit(student: StudentRow) {
@@ -115,6 +142,7 @@ export function StudentsManager({
       startDate: new Date(student.startDate),
       courseId: student.course.id,
       groupId: student.group.id,
+      photoUrl: student.photoUrl ?? "",
     } as never);
   }
 
@@ -124,7 +152,7 @@ export function StudentsManager({
     if (!res.ok) return toast.error("Ma'lumotlarni tekshiring.");
     toast.success("Ma'lumotlar yangilandi.");
     setEditTarget(null);
-    refetch({ search, status: statusFilter === "ALL" ? undefined : (statusFilter as never) });
+    refetch(currentFilters());
   }
 
   async function handleDelete() {
@@ -160,6 +188,19 @@ export function StudentsManager({
               <SelectItem value="FINISHED">Tugatgan</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={groupFilter} onValueChange={onGroupFilterChange}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Guruh" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Barcha guruhlar</SelectItem>
+              {allGroups.map((g) => (
+                <SelectItem key={g.id} value={g.id}>
+                  {g.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -173,6 +214,14 @@ export function StudentsManager({
               <DialogTitle>Yangi student qo'shish</DialogTitle>
             </DialogHeader>
             <form onSubmit={createForm.handleSubmit(onCreate)} className="grid grid-cols-2 gap-4">
+              <div className="col-span-2 space-y-2">
+                <Label>Rasm (ixtiyoriy)</Label>
+                <PhotoUpload
+                  value={createForm.watch("photoUrl")}
+                  onChange={(dataUrl) => createForm.setValue("photoUrl", dataUrl ?? "")}
+                  fallbackText={initials(`${createForm.watch("firstName") || ""} ${createForm.watch("lastName") || ""}`) || "?"}
+                />
+              </div>
               <div className="space-y-2">
                 <Label>Ism</Label>
                 <Input {...createForm.register("firstName")} />
@@ -298,6 +347,7 @@ export function StudentsManager({
               <TableRow key={student.id}>
                 <TableCell className="flex items-center gap-2">
                   <Avatar className="h-8 w-8">
+                    {student.photoUrl ? <AvatarImage src={student.photoUrl} alt={student.firstName} /> : null}
                     <AvatarFallback>{initials(`${student.firstName} ${student.lastName}`)}</AvatarFallback>
                   </Avatar>
                   {student.lastName} {student.firstName}
@@ -339,6 +389,14 @@ export function StudentsManager({
             <DialogTitle>Studentni tahrirlash</DialogTitle>
           </DialogHeader>
           <form onSubmit={editForm.handleSubmit(onEdit)} className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 space-y-2">
+              <Label>Rasm (ixtiyoriy)</Label>
+              <PhotoUpload
+                value={editForm.watch("photoUrl")}
+                onChange={(dataUrl) => editForm.setValue("photoUrl", dataUrl ?? "")}
+                fallbackText={initials(`${editTarget?.firstName ?? ""} ${editTarget?.lastName ?? ""}`) || "?"}
+              />
+            </div>
             <div className="space-y-2">
               <Label>Ism</Label>
               <Input {...editForm.register("firstName")} />

@@ -45,7 +45,7 @@ export function LoginForm() {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       <div className="space-y-2">
         <Label htmlFor="username">Login</Label>
-        <Input id="username" autoComplete="username" placeholder="masalan: teacher01" {...register("username")} />
+        <Input id="username" autoComplete="username" {...register("username")} />
         {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
       </div>
 

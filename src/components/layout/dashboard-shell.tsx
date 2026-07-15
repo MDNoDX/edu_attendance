@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, Bell } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/layout/user-menu";
+import { NotificationCenter } from "@/components/layout/notification-center";
 
 interface DashboardShellProps {
   fullName: string;
@@ -39,9 +40,7 @@ export function DashboardShell({ fullName, username, children }: DashboardShellP
             </Button>
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" aria-label="Bildirishnomalar">
-              <Bell className="h-[1.1rem] w-[1.1rem]" />
-            </Button>
+            <NotificationCenter />
             <ThemeToggle />
             <UserMenu fullName={fullName} username={username} />
           </div>

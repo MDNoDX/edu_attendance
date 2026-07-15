@@ -16,40 +16,79 @@ export const runtime = "nodejs";
  * keys, see src/lib/reports/fields.ts) — if omitted, a sensible default
  * subset is used. Optionally narrowed to one group via `groupId`. Always
  * scoped strictly to the logged-in teacher's own lessons.
- * GET /api/reports/teacher?period=daily|weekly|monthly&format=pdf|xlsx&fields=date,status,teacherEarning&groupId=...
+ * GET /api/reports/teacher?period=daily|weekly|monthly&format=pdf|xlsx&fields=date,status,teacherEarning&groupId=...&from=...&to=...
  */
 export async function GET(request: NextRequest) {
-  const session = await requireSession();
-  const { searchParams } = new URL(request.url);
+  try {
+    const session = await requireSession();
+    const { searchParams } = new URL(request.url);
 
-  const period = (searchParams.get("period") as ReportPeriod) || "monthly";
-  const format = searchParams.get("format") === "xlsx" ? "xlsx" : "pdf";
-  const fieldsParam = searchParams.get("fields");
-  const fields = resolveRequestedFields(fieldsParam ? fieldsParam.split(",") : undefined);
-  const groupId = searchParams.get("groupId") || undefined;
+    const format = searchParams.get("format") === "xlsx" ? "xlsx" : "pdf";
+    const fieldsParam = searchParams.get("fields");
+    const fields = resolveRequestedFields(fieldsParam ? fieldsParam.split(",") : undefined);
+    const groupId = searchParams.get("groupId") || undefined;
+    const studentId = searchParams.get("studentId") || undefined;
 
-  const { from, to } = resolvePeriodRange(period);
-  const records = await getAttendanceInRange({ from, to, groupId });
-  const rows = buildAttendanceReportRows(records as never);
+    // Either an explicit from/to range (used by the Hisobot page's custom
+    // date range) or a named period (daily/weekly/monthly) fallback.
+    const fromParam = searchParams.get("from");
+    const toParam = searchParams.get("to");
+    let from: Date;
+    let to: Date;
+    let title: string;
 
-  const title = `${periodLabelUZ(period)} hisobot — ${session.fullName}`;
-  const subtitle = `${formatDate(from)} — ${formatDate(to)}`;
+    if (fromParam && toParam) {
+      from = new Date(fromParam);
+      to = new Date(toParam);
+      to.setHours(23, 59, 59, 999);
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return NextResponse.json({ error: "Sana oralig'i noto'g'ri." }, { status: 400 });
+      }
+      title = `Hisobot — ${session.fullName}`;
+    } else {
+      const period = (searchParams.get("period") as ReportPeriod) || "monthly";
+      const range = resolvePeriodRange(period);
+      from = range.from;
+      to = range.to;
+      title = `${periodLabelUZ(period)} hisobot — ${session.fullName}`;
+    }
 
-  if (format === "xlsx") {
-    const buffer = await buildAttendanceExcelReport(rows, fields, `${title} (${subtitle})`);
+    const records = await getAttendanceInRange({ from, to, groupId, studentId });
+    const rows = buildAttendanceReportRows(records as never);
+    const subtitle = `${formatDate(from)} — ${formatDate(to)}`;
+
+    if (rows.length === 0) {
+      return NextResponse.json(
+        { error: "Tanlangan davrda hech qanday davomat yozuvi topilmadi." },
+        { status: 404 },
+      );
+    }
+
+    const filenameDate = `${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}`;
+
+    if (format === "xlsx") {
+      const buffer = await buildAttendanceExcelReport(rows, fields, `${title} (${subtitle})`);
+      return new NextResponse(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="hisobot-${filenameDate}.xlsx"`,
+        },
+      });
+    }
+
+    const buffer = await buildAttendancePdfReport(rows, fields, title, subtitle);
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="mening-hisobotim-${period}.xlsx"`,
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="hisobot-${filenameDate}.pdf"`,
       },
     });
+  } catch (error) {
+    console.error("Report export failed:", error);
+    const message = error instanceof Error && error.message === "UNAUTHENTICATED"
+      ? "Tizimga qayta kiring."
+      : "Hisobotni yaratishda xatolik yuz berdi. Qaytadan urinib ko'ring.";
+    const status = error instanceof Error && error.message === "UNAUTHENTICATED" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
-
-  const buffer = await buildAttendancePdfReport(rows, fields, title, subtitle);
-  return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="mening-hisobotim-${period}.pdf"`,
-    },
-  });
 }
