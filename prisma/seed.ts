@@ -1,9 +1,10 @@
 /**
- * Seed script — Ustoz Akademiyasi is single-tenant: this creates ONE demo
- * teacher account ("Toshpo'latov Mustafo") with a real-looking dataset
- * matching the teacher's actual groups:
- *  - 3 Courses (Fon 7-12 2x1,5 / Fon.A 2x1,5 / Fon.E 2x1,5), 560 000 so'm/oy
- *  - 3 Groups: 10-guruh, 11-guruh, 12-guruh — with real weekly schedules
+ * Seed script — NadirEdu is single-tenant: this creates ONE demo teacher
+ * account ("Toshpo'latov Mustafo") with a real-looking dataset matching the
+ * teacher's actual groups:
+ *  - 3 Groups: 10-guruh, 11-guruh, 12-guruh — each carrying its own name,
+ *    subject, monthly price (560 000 so'm/oy) and lessons-per-month
+ *    directly (no separate Course entity), with real weekly schedules
  *    and room names
  *  - 26 real students (names + phone numbers) distributed across the groups
  *  - LessonSessions for July 2026 up to today, with attendance marked
@@ -15,6 +16,7 @@
 import { PrismaClient, type Gender } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { computeEarningsForHistory, computeLessonValue, type AttendanceHistoryEntry } from "../src/lib/attendance-payment";
+import { formatFullName } from "../src/lib/utils";
 
 const prisma = new PrismaClient();
 
@@ -80,13 +82,18 @@ async function main() {
   const teacherUsername = process.env.SEED_TEACHER_USERNAME ?? "teacher1";
   const teacherPassword = process.env.SEED_TEACHER_PASSWORD ?? "Teacher123!";
 
+  const teacherFirstName = "Mustafo";
+  const teacherLastName = "Toshpo'latov";
+
   const teacher = await prisma.user.upsert({
     where: { username: teacherUsername },
     update: {},
     create: {
       username: teacherUsername,
       passwordHash: await hash(teacherPassword),
-      fullName: "Toshpo'latov Mustafo",
+      firstName: teacherFirstName,
+      lastName: teacherLastName,
+      fullName: formatFullName(teacherFirstName, teacherLastName),
       phone: "+998901234567",
       defaultLessonRate: 25000,
       specialization: "Fonetika",
@@ -96,41 +103,16 @@ async function main() {
   const coursePrice = 560000;
   const lessonsPerMonth = 8; // haftasiga 2 marta x taxminan 4 hafta
 
-  const course10 = await prisma.course.create({
-    data: {
-      userId: teacher.id,
-      name: "Fon 7-12 2x1,5",
-      subject: "Fonetika",
-      durationMonths: 6,
-      monthlyPrice: coursePrice,
-      lessonsPerMonth,
-    },
-  });
-  const course11 = await prisma.course.create({
-    data: {
-      userId: teacher.id,
-      name: "Fon.A 2x1,5",
-      subject: "Fonetika",
-      durationMonths: 6,
-      monthlyPrice: coursePrice,
-      lessonsPerMonth,
-    },
-  });
-  const course12 = await prisma.course.create({
-    data: {
-      userId: teacher.id,
-      name: "Fon.E 2x1,5",
-      subject: "Fonetika",
-      durationMonths: 6,
-      monthlyPrice: coursePrice,
-      lessonsPerMonth,
-    },
-  });
-
+  // Course used to be a separate template entity; a group now carries its
+  // own name/subject/monthlyPrice/lessonsPerMonth directly (see
+  // prisma/schema.prisma), so each group definition below just states its
+  // own values instead of pointing at a shared Course row.
   const groupDefs = [
     {
       name: "10-guruh",
-      courseId: course10.id,
+      subject: "Fonetika",
+      monthlyPrice: coursePrice,
+      lessonsPerMonth,
       roomName: "9-xona",
       startTime: "16:00",
       endTime: "18:00",
@@ -139,7 +121,9 @@ async function main() {
     },
     {
       name: "11-guruh",
-      courseId: course11.id,
+      subject: "Fonetika",
+      monthlyPrice: coursePrice,
+      lessonsPerMonth,
       roomName: "10-xona",
       startTime: "18:00",
       endTime: "20:00",
@@ -148,7 +132,9 @@ async function main() {
     },
     {
       name: "12-guruh",
-      courseId: course12.id,
+      subject: "Fonetika",
+      monthlyPrice: coursePrice,
+      lessonsPerMonth,
       roomName: "10-xona",
       startTime: "20:00",
       endTime: "22:00",
@@ -167,7 +153,9 @@ async function main() {
       data: {
         userId: teacher.id,
         name: def.name,
-        courseId: def.courseId,
+        subject: def.subject,
+        monthlyPrice: def.monthlyPrice,
+        lessonsPerMonth: def.lessonsPerMonth,
         roomName: def.roomName,
         capacity: 15,
         startDate: new Date(2026, 6, 1),
@@ -175,7 +163,7 @@ async function main() {
           create: def.daysOfWeek.map((dayOfWeek) => ({ dayOfWeek, startTime: def.startTime, endTime: def.endTime })),
         },
       },
-      include: { scheduleSlots: true, course: true },
+      include: { scheduleSlots: true },
     });
 
     const students = [];
@@ -192,7 +180,6 @@ async function main() {
           address: "Toshkent shahri, Yunusobod tumani",
           startDate: new Date(2026, 6, 1),
           status: "ACTIVE",
-          courseId: def.courseId,
           groupId: group.id,
         },
       });
@@ -220,7 +207,7 @@ async function main() {
       sessions.push({ session, isPast: date <= today });
     }
 
-    const lessonValue = computeLessonValue(Number(group.course.monthlyPrice), group.course.lessonsPerMonth);
+    const lessonValue = computeLessonValue(Number(group.monthlyPrice), group.lessonsPerMonth);
     const lessonRate = Number(teacher.defaultLessonRate);
     const pastSessions = sessions.filter((s) => s.isPast).map((s) => s.session);
 

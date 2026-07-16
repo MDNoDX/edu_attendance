@@ -1,9 +1,11 @@
 // ============================================================================
-// Ustoz Akademiyasi — single-role (Teacher) attendance & earnings tracker.
-// Every teacher fully self-manages their own courses, groups, students,
-// schedule, attendance and payments. There is no admin/oversight role —
-// each User's data is completely isolated from every other User's data.
-// PostgreSQL. Designed for Neon / Supabase + Vercel deployment.
+// NadirEdu — single-role (Teacher) attendance & earnings tracker.
+// Every teacher fully self-manages their own groups, students, schedule,
+// attendance and payments. There is no admin/oversight role for the normal
+// case — each User's data is completely isolated from every other User's
+// data (a small number of separately-provisioned SUPER_ADMIN accounts can
+// see across teachers from /admin; see the UserRole enum below).
+// PostgreSQL. Designed for Neon + Vercel deployment.
 // ============================================================================
 
 generator client {
