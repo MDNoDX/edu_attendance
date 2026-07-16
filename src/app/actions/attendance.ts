@@ -94,6 +94,7 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
     include: {
       course: true,
       students: { where: { deletedAt: null }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] },
+      scheduleSlots: true,
     },
   });
   if (!group) throw new Error("NOT_FOUND");
@@ -110,8 +111,12 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
   if (group.status === "ACTIVE") {
     try {
       await generateLessonSessionsForGroup(groupId, 8);
-    } catch {
-      // Non-fatal — fall through with whatever sessions already exist.
+    } catch (err) {
+      // Non-fatal — fall through with whatever sessions already exist. Still
+      // log it server-side (visible in Vercel logs) so a silently-failing
+      // self-heal is diagnosable instead of just showing an empty grid with
+      // no trace of why.
+      console.error(`[getGroupAttendanceJournal] self-heal failed for group ${groupId}:`, err);
     }
   }
 
@@ -134,6 +139,11 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
   return serializeDecimals({
     group,
     students: group.students,
+    // Lets the client tell "no lessons this month because the group has no
+    // weekly schedule at all" apart from "no lessons because none have
+    // happened yet" — the two look identical as an empty sessions array,
+    // but only one of them is something the teacher can actually fix.
+    hasScheduleSlots: group.scheduleSlots.length > 0,
     sessions: sessions.map((s) => ({
       id: s.id,
       date: s.date,

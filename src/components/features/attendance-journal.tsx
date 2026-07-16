@@ -1,8 +1,20 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Lock, Check, X as XIcon, Clock, Minus, MessageSquareText } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Lock,
+  Check,
+  X as XIcon,
+  Clock,
+  Minus,
+  MessageSquareText,
+  RefreshCw,
+  CalendarX2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +29,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn, formatUZS } from "@/lib/utils";
 import { markAttendance, getGroupAttendanceJournal } from "@/app/actions/attendance";
+import { regenerateGroupSessions } from "@/app/actions/schedule";
 
 type AttendanceStatus = "PRESENT" | "EXCUSED_ABSENT" | "UNEXCUSED_ABSENT" | "LATE";
 
@@ -106,17 +119,21 @@ export function AttendanceJournal({
   initialMonth,
   initialStudents,
   initialSessions,
+  initialHasScheduleSlots,
 }: {
   groupId: string;
   initialMonth: string; // "2026-07"
   initialStudents: JournalStudent[];
   initialSessions: JournalSession[];
+  initialHasScheduleSlots: boolean;
 }) {
   const [month, setMonth] = useState(initialMonth);
   const [students] = useState(initialStudents);
   const [sessions, setSessions] = useState(initialSessions);
+  const [hasScheduleSlots, setHasScheduleSlots] = useState(initialHasScheduleSlots);
   const [pending, startTransition] = useTransition();
   const [savingCell, setSavingCell] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
   const [lateDialog, setLateDialog] = useState<{ sessionId: string; studentId: string; time: string } | null>(null);
   const [noteDialog, setNoteDialog] = useState<{ sessionId: string; studentId: string; note: string } | null>(null);
 
@@ -125,6 +142,29 @@ export function AttendanceJournal({
     return new Date(y, m - 1, 1);
   }, [month]);
 
+  async function handleRegenerate() {
+    setRegenerating(true);
+    try {
+      const res = await regenerateGroupSessions(groupId);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      if (res.created > 0) {
+        toast.success(`${res.created} ta dars kuni yaratildi.`);
+      } else {
+        toast.success("Dars kunlari allaqachon yaratilgan — hech narsa o'zgarmadi.");
+      }
+      const data = await getGroupAttendanceJournal(groupId, monthDate);
+      setSessions(data.sessions);
+      setHasScheduleSlots(data.hasScheduleSlots);
+    } catch {
+      toast.error("Xatolik yuz berdi. Qaytadan urinib ko'ring.");
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   function shiftMonth(delta: number) {
     const next = new Date(monthDate.getFullYear(), monthDate.getMonth() + delta, 1);
     const key = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
@@ -132,6 +172,7 @@ export function AttendanceJournal({
     startTransition(async () => {
       try {
         const data = await getGroupAttendanceJournal(groupId, next);
+        setHasScheduleSlots(data.hasScheduleSlots);
         setSessions(data.sessions);
       } catch {
         toast.error("Oyni yuklab bo'lmadi. Qaytadan urinib ko'ring.");
@@ -294,8 +335,27 @@ export function AttendanceJournal({
           Bu guruhda hali studentlar yo&apos;q.
         </div>
       ) : sessions.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-          Bu oyda dars kunlari topilmadi.
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+          <CalendarX2 className="h-6 w-6" />
+          {!hasScheduleSlots ? (
+            <>
+              <p className="max-w-md">
+                Bu guruh uchun haftalik dars jadvali (qaysi kunlari, soat nechada dars bo&apos;lishi) hali
+                belgilanmagan — shuning uchun dars kunlari avtomatik yaratilmayapti.
+              </p>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/dashboard/groups">Guruhni tahrirlab, jadvalni belgilash</Link>
+              </Button>
+            </>
+          ) : (
+            <>
+              <p className="max-w-md">Bu oyda dars kunlari topilmadi.</p>
+              <Button size="sm" variant="outline" onClick={handleRegenerate} disabled={regenerating}>
+                <RefreshCw className={cn("h-3.5 w-3.5", regenerating && "animate-spin")} />
+                {regenerating ? "Tekshirilmoqda..." : "Qayta tekshirish"}
+              </Button>
+            </>
+          )}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border">

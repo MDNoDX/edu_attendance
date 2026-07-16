@@ -55,6 +55,7 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
           initialMonth={monthKey}
           initialStudents={journal.students}
           initialSessions={journal.sessions}
+          initialHasScheduleSlots={journal.hasScheduleSlots}
         />
       </section>
 

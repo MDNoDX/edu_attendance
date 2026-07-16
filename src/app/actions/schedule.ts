@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@/lib/db";
+import { prisma, toFriendlyDbError } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { serializeDecimals } from "@/lib/serialize";
 
@@ -64,6 +64,39 @@ export async function generateLessonSessionsForGroup(groupId: string, weeks: num
   }
 
   return { created };
+}
+
+/**
+ * Owner-scoped, teacher-triggerable version of the self-heal that
+ * getGroupAttendanceJournal runs automatically. Exists so a teacher stuck
+ * looking at "Bu oyda dars kunlari topilmadi" has a visible, immediate way
+ * to force a regeneration and see WHY it's empty (no weekly schedule set at
+ * all vs. a transient DB hiccup vs. genuinely nothing to generate), instead
+ * of the silent background self-heal that gives no feedback either way.
+ */
+export async function regenerateGroupSessions(groupId: string) {
+  const session = await requireSession();
+  const group = await prisma.group.findFirst({
+    where: { id: groupId, userId: session.sub },
+    include: { scheduleSlots: true },
+  });
+  if (!group) return { ok: false as const, error: "Guruh topilmadi." };
+
+  if (group.scheduleSlots.length === 0) {
+    return {
+      ok: false as const,
+      error:
+        "Bu guruh uchun haftalik dars jadvali (qaysi kunlari dars bo'lishi) belgilanmagan. Guruhlar ro'yxatida ushbu guruhni tahrirlab, haftalik jadvalni qo'shing.",
+      needsScheduleSlots: true as const,
+    };
+  }
+
+  try {
+    const { created } = await generateLessonSessionsForGroup(groupId, 8);
+    return { ok: true as const, created };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 /** Ensures every ACTIVE group owned by the current teacher has sessions generated far enough ahead. */
