@@ -98,7 +98,14 @@ export async function destroySessionCookie() {
  * the current one from the teacher's own device list.
  */
 export async function createSessionCookieAndRecord(
-  payload: Omit<SessionPayload, "tokenId">,
+  // Deliberately NOT `Omit<SessionPayload, "tokenId">` — SessionPayload's
+  // own `[key: string]: unknown` index signature makes TypeScript's Omit
+  // collapse the whole type down to just that index signature (Omit is
+  // Pick<T, Exclude<keyof T, K>>, and keyof a type with a string index
+  // signature is `string`, so Exclude<string, "tokenId"> is still just
+  // `string` — none of the named properties survive). Spelling out the
+  // exact shape here avoids that trap entirely.
+  payload: { sub: string; username: string; fullName: string; role: "TEACHER" | "SUPER_ADMIN"; impersonatorId?: string },
   meta: { userAgent?: string | null; ip?: string | null } = {},
   existingTokenId?: string,
 ): Promise<string> {
