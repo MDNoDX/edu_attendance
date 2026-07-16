@@ -3,11 +3,18 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { AttendanceJournal } from "@/components/features/attendance-journal";
-import { TeacherReports } from "@/components/features/teacher-reports";
+import { ReportDashboard } from "@/components/features/report-dashboard";
 import { StudentsManager } from "@/components/features/students-manager";
 import { getGroupAttendanceJournal } from "@/app/actions/attendance";
 import { listStudents } from "@/app/actions/students";
+import { getReportAnalytics } from "@/app/actions/reports";
+
+function startOfCurrentMonth() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
 
 export default async function GroupDetailPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = await params;
@@ -31,7 +38,12 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
   // Scoped to this group only — the group detail page is where a teacher
   // adds students right after creating a group, so the list here should
   // only ever show this group's own roster, not the full Studentlarim list.
-  const { students: groupStudents, total: groupStudentTotal } = await listStudents({ groupId, pageSize: 200 });
+  // The report is likewise scoped: a teacher opening THIS group's page wants
+  // THIS group's own numbers, not the full Hisobot page's every-group view.
+  const [{ students: groupStudents, total: groupStudentTotal }, groupAnalytics] = await Promise.all([
+    listStudents({ groupId, pageSize: 200 }),
+    getReportAnalytics({ from: startOfCurrentMonth(), to: now, groupId }),
+  ]);
 
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
@@ -55,33 +67,48 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
         />
       </div>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Studentlar {groupStudentTotal > 0 && `(${groupStudentTotal})`}
-        </h2>
-        <StudentsManager
-          initialStudents={groupStudents as never}
-          initialTotal={groupStudentTotal}
-          groups={[{ id: journal.group.id, name: journal.group.name }]}
-          lockGroupId={journal.group.id}
-        />
-      </section>
+      {/* Each concern gets its own tab instead of being stacked one long page
+          — a teacher checking today's attendance shouldn't have to scroll
+          past the full student roster and a report card to get there. */}
+      <Tabs defaultValue="attendance">
+        <TabsList>
+          <TabsTrigger value="attendance">Davomat</TabsTrigger>
+          <TabsTrigger value="students">Studentlar {groupStudentTotal > 0 && `(${groupStudentTotal})`}</TabsTrigger>
+          <TabsTrigger value="report">Hisobot</TabsTrigger>
+        </TabsList>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Davomat jurnali</h2>
-        <AttendanceJournal
-          groupId={groupId}
-          initialMonth={monthKey}
-          initialStudents={journal.students}
-          initialSessions={journal.sessions}
-          initialHasScheduleSlots={journal.hasScheduleSlots}
-        />
-      </section>
+        <TabsContent value="attendance">
+          <AttendanceJournal
+            groupId={groupId}
+            initialMonth={monthKey}
+            initialStudents={journal.students}
+            initialSessions={journal.sessions}
+            initialHasScheduleSlots={journal.hasScheduleSlots}
+          />
+        </TabsContent>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Hisobot chiqarish</h2>
-        <TeacherReports groups={[{ id: journal.group.id, name: journal.group.name }]} />
-      </section>
+        <TabsContent value="students">
+          <StudentsManager
+            initialStudents={groupStudents as never}
+            initialTotal={groupStudentTotal}
+            groups={[{ id: journal.group.id, name: journal.group.name }]}
+            lockGroupId={journal.group.id}
+          />
+        </TabsContent>
+
+        <TabsContent value="report">
+          <ReportDashboard
+            initialAnalytics={groupAnalytics}
+            groups={[{ id: journal.group.id, name: journal.group.name }]}
+            students={groupStudents.map((s) => ({
+              id: s.id,
+              fullName: `${s.lastName} ${s.firstName}`,
+              groupId: journal.group.id,
+            }))}
+            lockGroupId={journal.group.id}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

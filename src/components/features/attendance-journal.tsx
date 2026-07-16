@@ -465,43 +465,58 @@ export function AttendanceJournal({
                       const tooltip = tooltipParts.filter(Boolean).join(" · ") || undefined;
                       return (
                         <td key={s.id} className="px-1 py-2 text-center">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
+                          <div className="relative mx-auto w-fit">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  disabled={savingCell === cellKey}
+                                  title={tooltip}
+                                  className={cn(
+                                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                                    mark ? STATUS_CONFIG[mark.status].className : "bg-muted text-muted-foreground/50 hover:bg-accent",
+                                  )}
+                                >
+                                  {mark ? (
+                                    (() => {
+                                      const Icon = STATUS_CONFIG[mark.status].icon;
+                                      return <Icon className="h-3.5 w-3.5" />;
+                                    })()
+                                  ) : (
+                                    <span className="text-xs">·</span>
+                                  )}
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="center">
+                                {STATUS_OPTIONS.map((status) => {
+                                  const cfg = STATUS_CONFIG[status];
+                                  const Icon = cfg.icon;
+                                  return (
+                                    <DropdownMenuItem key={status} onClick={() => onStatusPick(s.id, student.id, status)}>
+                                      <Icon className="mr-2 h-4 w-4" /> {cfg.label}
+                                    </DropdownMenuItem>
+                                  );
+                                })}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                            {mark?.note && (
+                              // Its own independent button (not just a `title` tooltip, which
+                              // never works on touch devices) — pressing this directly opens
+                              // the note for viewing/editing without going through the
+                              // status dropdown at all. stopPropagation keeps this press from
+                              // also toggling the dropdown trigger underneath it.
                               <button
-                                disabled={savingCell === cellKey}
-                                title={tooltip}
-                                className={cn(
-                                  "relative mx-auto flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                                  mark ? STATUS_CONFIG[mark.status].className : "bg-muted text-muted-foreground/50 hover:bg-accent",
-                                )}
+                                type="button"
+                                aria-label="Izohni ko'rish"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setNoteDialog({ sessionId: s.id, studentId: student.id, note: mark.note ?? "" });
+                                }}
+                                className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background ring-1 ring-border hover:ring-primary"
                               >
-                                {mark ? (
-                                  (() => {
-                                    const Icon = STATUS_CONFIG[mark.status].icon;
-                                    return <Icon className="h-3.5 w-3.5" />;
-                                  })()
-                                ) : (
-                                  <span className="text-xs">·</span>
-                                )}
-                                {mark?.note && (
-                                  <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-background">
-                                    <MessageSquareText className="h-2 w-2 text-foreground/70" />
-                                  </span>
-                                )}
+                                <MessageSquareText className="h-2 w-2 text-foreground/70" />
                               </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="center">
-                              {STATUS_OPTIONS.map((status) => {
-                                const cfg = STATUS_CONFIG[status];
-                                const Icon = cfg.icon;
-                                return (
-                                  <DropdownMenuItem key={status} onClick={() => onStatusPick(s.id, student.id, status)}>
-                                    <Icon className="mr-2 h-4 w-4" /> {cfg.label}
-                                  </DropdownMenuItem>
-                                );
-                              })}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            )}
+                          </div>
                           {mark?.status === "LATE" && mark.arrivalTime && (
                             <div className="mx-auto mt-0.5 w-fit rounded bg-amber-500/15 px-1 text-[9px] font-medium leading-tight text-amber-600 dark:text-amber-400">
                               {mark.arrivalTime}

@@ -6,9 +6,7 @@ import {
   FileText,
   FileSpreadsheet,
   Loader2,
-  Users,
   Wallet,
-  TrendingDown,
   Check,
   EyeOff,
   Eye,
@@ -26,11 +24,12 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getReportAnalytics, type ReportAnalytics } from "@/app/actions/reports";
 import { ATTENDANCE_REPORT_FIELDS } from "@/lib/reports/fields";
 import { Checkbox } from "@/components/ui/checkbox";
-import { formatUZS, formatDate } from "@/lib/utils";
+import { formatUZS, formatDate, cn } from "@/lib/utils";
 
 interface GroupOption {
   id: string;
@@ -73,14 +72,24 @@ export function ReportDashboard({
   initialAnalytics,
   groups,
   students,
+  /**
+   * When set, this report is permanently scoped to one group — used from
+   * that group's own "Hisobot" tab (src/app/dashboard/groups/[groupId]/page.tsx).
+   * The "Ko'rsatish" scope picker is hidden entirely (there's nothing to
+   * choose — every number on this view is already this one group's own),
+   * rather than just pre-selecting it, since a picker with a single
+   * meaningful option is just clutter.
+   */
+  lockGroupId,
 }: {
   initialAnalytics: ReportAnalytics;
   groups: GroupOption[];
   students: StudentOption[];
+  lockGroupId?: string;
 }) {
   const [from, setFrom] = useState(toDateInputValue(startOfCurrentMonth()));
   const [to, setTo] = useState(toDateInputValue(new Date()));
-  const [scope, setScope] = useState<"all" | string>("all"); // "all" | `group:<id>` | `student:<id>`
+  const [scope, setScope] = useState<"all" | string>(lockGroupId ? `group:${lockGroupId}` : "all"); // "all" | `group:<id>` | `student:<id>`
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [isPending, startTransition] = useTransition();
   const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
@@ -93,9 +102,107 @@ export function ReportDashboard({
   // include real figures regardless of this switch.
   const [pricesHidden, setPricesHidden] = useState(false);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  // Per-student breakdown behind whichever headline card / period-stat box
+  // was clicked — every one of those numbers is just a sum over
+  // analytics.students, so a single generic dialog can explain any of them
+  // instead of building a bespoke drill-down for each.
+  const [detailDialog, setDetailDialog] = useState<{
+    title: string;
+    description: string;
+    rows: { label: string; sub: string; value: string }[];
+    total: string;
+  } | null>(null);
 
   function money(n: number) {
     return pricesHidden ? "•••••" : formatUZS(n);
+  }
+
+  type DetailKind =
+    | "gross"
+    | "expected"
+    | "earnedMonth"
+    | "present"
+    | "late"
+    | "excused"
+    | "unexcused"
+    | "earnedRange"
+    | "lost";
+
+  function openDetail(kind: DetailKind) {
+    const configs: Record<
+      DetailKind,
+      { title: string; description: string; pick: (s: ReportAnalytics["students"][number]) => number; isMoney: boolean }
+    > = {
+      gross: {
+        title: "O'quvchilar to'lovi — kimlardan tashkil topgani",
+        description: "Har bir studentning o'zi to'laydigan oylik tuition narxi.",
+        pick: (s) => s.monthlyPrice,
+        isMoney: true,
+      },
+      expected: {
+        title: "Oylik kutilayotgan summa — hisoblash",
+        description: "Har bir student uchun: dars ulushi x shu oydagi haqiqiy dars kunlari soni.",
+        pick: (s) => s.expectedThisMonth,
+        isMoney: true,
+      },
+      earnedMonth: {
+        title: "Amalda olingan ulush (shu oy) — kimdan qancha",
+        description: "Oy boshidan bugungacha, real davomat asosida har bir studentdan olingan ulush.",
+        pick: (s) => s.earnedMonthToDate,
+        isMoney: true,
+      },
+      present: {
+        title: "Keldi — studentlar bo'yicha",
+        description: `${formatDate(analytics.from)} — ${formatDate(analytics.to)} davrida.`,
+        pick: (s) => s.present,
+        isMoney: false,
+      },
+      late: {
+        title: "Kechikdi — studentlar bo'yicha",
+        description: `${formatDate(analytics.from)} — ${formatDate(analytics.to)} davrida.`,
+        pick: (s) => s.late,
+        isMoney: false,
+      },
+      excused: {
+        title: "Sababli kelmadi — studentlar bo'yicha",
+        description: `${formatDate(analytics.from)} — ${formatDate(analytics.to)} davrida.`,
+        pick: (s) => s.excusedAbsent,
+        isMoney: false,
+      },
+      unexcused: {
+        title: "Sababsiz kelmadi — studentlar bo'yicha",
+        description: `${formatDate(analytics.from)} — ${formatDate(analytics.to)} davrida.`,
+        pick: (s) => s.unexcusedAbsent,
+        isMoney: false,
+      },
+      earnedRange: {
+        title: "Davr ichida ulushim — studentlar bo'yicha",
+        description: `${formatDate(analytics.from)} — ${formatDate(analytics.to)} davrida haqiqiy davomat asosida.`,
+        pick: (s) => s.earnedInRange,
+        isMoney: true,
+      },
+      lost: {
+        title: "Yo'qotilgan (uzr) — studentlar bo'yicha",
+        description: "Ketma-ket 3+ kelmagan holatlar sababli to'lanmagan summa.",
+        pick: (s) => s.lostToCutoff,
+        isMoney: true,
+      },
+    };
+
+    const cfg = configs[kind];
+    const rows = analytics.students
+      .map((s) => ({ label: s.fullName, sub: s.groupName, raw: cfg.pick(s) }))
+      .filter((r) => r.raw !== 0)
+      .sort((a, b) => b.raw - a.raw)
+      .map((r) => ({ label: r.label, sub: r.sub, value: cfg.isMoney ? money(r.raw) : String(r.raw) }));
+    const totalRaw = analytics.students.reduce((sum, s) => sum + cfg.pick(s), 0);
+
+    setDetailDialog({
+      title: cfg.title,
+      description: cfg.description,
+      rows,
+      total: cfg.isMoney ? money(totalRaw) : String(totalRaw),
+    });
   }
 
   const scopeOptions = useMemo(
@@ -182,7 +289,7 @@ export function ReportDashboard({
       </div>
 
       <Card>
-        <CardContent className="grid gap-4 p-5 sm:grid-cols-3">
+        <CardContent className={cn("grid gap-4 p-5", lockGroupId ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
           <div className="space-y-2">
             <Label>Sanadan</Label>
             <Input type="date" value={from} onChange={(e) => onFromChange(e.target.value)} />
@@ -191,21 +298,23 @@ export function ReportDashboard({
             <Label>Sanagacha</Label>
             <Input type="date" value={to} onChange={(e) => onToChange(e.target.value)} />
           </div>
-          <div className="space-y-2">
-            <Label>Ko&apos;rsatish</Label>
-            <Select value={scope} onValueChange={onScopeChange}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {scopeOptions.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!lockGroupId && (
+            <div className="space-y-2">
+              <Label>Ko&apos;rsatish</Label>
+              <Select value={scope} onValueChange={onScopeChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {scopeOptions.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -222,11 +331,12 @@ export function ReportDashboard({
       >
         <FadeInItem>
           <StatCard
-            label="Umumiy tushadigan summa"
+            label="O'quvchilar to'lovi (jami)"
             value={money(analytics.totalGrossRevenue)}
             icon={Wallet}
             tone="info"
-            hint="Studentlarning oylik to'lovlari yig'indisi"
+            hint="Bu o'quvchilarning oylik to'lovi — sizning ulushingiz emas"
+            onClick={() => openDetail("gross")}
           />
         </FadeInItem>
         <FadeInItem>
@@ -236,6 +346,7 @@ export function ReportDashboard({
             icon={Target}
             tone="violet"
             hint="Shu oy — hamma student to'liq kelsa, ulushingiz"
+            onClick={() => openDetail("expected")}
           />
         </FadeInItem>
         <FadeInItem>
@@ -245,6 +356,7 @@ export function ReportDashboard({
             icon={TrendingUp}
             tone="success"
             hint="Oy boshidan bugungacha, real davomat asosida"
+            onClick={() => openDetail("earnedMonth")}
           />
         </FadeInItem>
       </FadeInStagger>
@@ -289,34 +401,58 @@ export function ReportDashboard({
           </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-6">
-          <div className="rounded-lg bg-success/10 p-3 text-center">
+          <button
+            type="button"
+            onClick={() => openDetail("present")}
+            className="rounded-lg bg-success/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
+          >
             <p className="text-2xl font-semibold text-success">{analytics.present}</p>
             <p className="text-xs text-muted-foreground">Keldi</p>
-          </div>
-          <div className="rounded-lg bg-warning/10 p-3 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => openDetail("late")}
+            className="rounded-lg bg-warning/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
+          >
             <p className="text-2xl font-semibold text-warning">{analytics.late}</p>
             <p className="text-xs text-muted-foreground">Kechikdi</p>
-          </div>
-          <div className="rounded-lg bg-sky-500/10 p-3 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => openDetail("excused")}
+            className="rounded-lg bg-sky-500/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
+          >
             <p className="text-2xl font-semibold text-sky-600 dark:text-sky-400">{analytics.excusedAbsent}</p>
             <p className="text-xs text-muted-foreground">Sababli kelmadi</p>
-          </div>
-          <div className="rounded-lg bg-destructive/10 p-3 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => openDetail("unexcused")}
+            className="rounded-lg bg-destructive/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
+          >
             <p className="text-2xl font-semibold text-destructive">{analytics.unexcusedAbsent}</p>
             <p className="text-xs text-muted-foreground">Sababsiz kelmadi</p>
-          </div>
-          <div className="rounded-lg bg-success/10 p-3 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => openDetail("earnedRange")}
+            className="rounded-lg bg-success/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
+          >
             <p className="text-lg font-semibold text-success">{money(analytics.totalEarnedInRange)}</p>
             <p className="text-xs text-muted-foreground">Davr ichida ulushim</p>
-          </div>
-          <div className="rounded-lg bg-destructive/10 p-3 text-center">
+          </button>
+          <button
+            type="button"
+            onClick={() => openDetail("lost")}
+            className="rounded-lg bg-destructive/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
+          >
             <p className="text-lg font-semibold text-destructive">{money(analytics.totalLostToCutoff)}</p>
             <p className="text-xs text-muted-foreground">Yo&apos;qotilgan (uzr)</p>
-          </div>
+          </button>
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="groups">
+      <Tabs defaultValue={lockGroupId ? "students" : "groups"}>
         <TabsList>
           <TabsTrigger value="groups">Guruhlar bo&apos;yicha</TabsTrigger>
           <TabsTrigger value="students">Studentlar bo&apos;yicha</TabsTrigger>
@@ -450,6 +586,34 @@ export function ReportDashboard({
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={!!detailDialog} onOpenChange={(open) => !open && setDetailDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{detailDialog?.title}</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">{detailDialog?.description}</p>
+          <div className="max-h-80 space-y-1 overflow-y-auto">
+            {detailDialog?.rows.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted-foreground">Bu davrda ma&apos;lumot yo&apos;q.</p>
+            ) : (
+              detailDialog?.rows.map((r, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm odd:bg-muted/30">
+                  <div>
+                    <p className="font-medium">{r.label}</p>
+                    <p className="text-xs text-muted-foreground">{r.sub}</p>
+                  </div>
+                  <p className="shrink-0 font-medium">{r.value}</p>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-between border-t border-border pt-3 text-sm font-semibold">
+            <span>Jami</span>
+            <span>{detailDialog?.total}</span>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
