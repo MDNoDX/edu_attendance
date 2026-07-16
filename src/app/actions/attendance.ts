@@ -126,8 +126,21 @@ export async function getLessonRoster(lessonSessionId: string) {
  * dates for one group, one calendar month). Future dates are returned
  * un-marked so the UI can render them locked — a teacher can't record
  * attendance for a lesson that hasn't happened yet.
+ *
+ * Takes explicit `year`/`month` integers rather than a `Date` — this used to
+ * take a `Date` built on the CLIENT (e.g. "1st of next month, local
+ * midnight") and call `.getFullYear()`/`.getMonth()` on it here on the
+ * SERVER. Those two calls read the local timezone of whichever process
+ * calls them: the client builds that Date in the teacher's own timezone
+ * (Tashkent, UTC+5), but Next.js server actions run on Vercel in UTC, so the
+ * exact same instant can land on a different calendar date/month once
+ * re-interpreted server-side — e.g. "Aug 1st 00:00 Tashkent" is
+ * "Jul 31st 19:00 UTC", so the server would silently resolve it back to
+ * July. That's what caused month navigation to intermittently show the
+ * wrong month (or seem to "jump" depending on what time of day it was
+ * clicked). Plain integers have no timezone to misinterpret.
  */
-export async function getGroupAttendanceJournal(groupId: string, monthDate: Date) {
+export async function getGroupAttendanceJournal(groupId: string, year: number, month: number) {
   const session = await requireSession();
   const group = await prisma.group.findFirst({
     where: { id: groupId, userId: session.sub },
@@ -169,8 +182,10 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
     }
   }
 
-  const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-  const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
+  // `month` is 1-12 here (matching how the client already tracks it as
+  // "YYYY-MM"), so the Date constructor's 0-indexed month needs `month - 1`.
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999);
 
   const sessions = await prisma.lessonSession.findMany({
     where: { groupId, date: { gte: monthStart, lte: monthEnd } },

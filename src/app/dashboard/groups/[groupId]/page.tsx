@@ -22,7 +22,7 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
 
   let journal;
   try {
-    journal = await getGroupAttendanceJournal(groupId, now);
+    journal = await getGroupAttendanceJournal(groupId, now.getFullYear(), now.getMonth() + 1);
   } catch (error) {
     // Only a genuinely missing/foreign group should 404. Any other error
     // (a transient DB hiccup, etc.) should NOT silently swap the whole page

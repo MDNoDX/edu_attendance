@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -156,7 +156,7 @@ export function AttendanceJournal({
       } else {
         toast.success("Dars kunlari allaqachon yaratilgan — hech narsa o'zgarmadi.");
       }
-      const data = await getGroupAttendanceJournal(groupId, monthDate);
+      const data = await getGroupAttendanceJournal(groupId, monthDate.getFullYear(), monthDate.getMonth() + 1);
       setSessions(data.sessions);
       setHasScheduleSlots(data.hasScheduleSlots);
     } catch {
@@ -166,16 +166,29 @@ export function AttendanceJournal({
     }
   }
 
+  // Guards against a stale, slower response overwriting a faster, more
+  // recent one when the teacher clicks the month arrows in quick succession
+  // (e.g. next-next-prev before the first fetch has resolved) — without
+  // this, whichever request happens to resolve LAST wins even if it's not
+  // the one for the month currently shown, silently showing the wrong
+  // month's data under the right month's label.
+  const requestSeqRef = useRef(0);
+
   function shiftMonth(delta: number) {
     const next = new Date(monthDate.getFullYear(), monthDate.getMonth() + delta, 1);
     const key = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`;
     setMonth(key);
+    const year = next.getFullYear();
+    const targetMonth = next.getMonth() + 1;
+    const seq = ++requestSeqRef.current;
     startTransition(async () => {
       try {
-        const data = await getGroupAttendanceJournal(groupId, next);
+        const data = await getGroupAttendanceJournal(groupId, year, targetMonth);
+        if (seq !== requestSeqRef.current) return; // a newer navigation already superseded this one
         setHasScheduleSlots(data.hasScheduleSlots);
         setSessions(data.sessions);
       } catch {
+        if (seq !== requestSeqRef.current) return;
         toast.error("Oyni yuklab bo'lmadi. Qaytadan urinib ko'ring.");
       }
     });

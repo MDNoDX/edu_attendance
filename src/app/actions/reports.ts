@@ -162,6 +162,16 @@ export async function getReportAnalytics(filters: ReportFilters): Promise<Report
     let earnedInRange = 0;
     let lostToCutoff = 0;
 
+    // The teacher's own per-lesson rate for THIS student's group — needed
+    // inside the loop below because "Yo'qotilgan" must be the teacher's own
+    // forfeited earning (e.g. 18 500 so'm x 3 missed lessons), never the
+    // student's tuition-based lessonValueSnapshot. That was the exact same
+    // class of bug as the old "Oylik kutilayotgan" mixup: a cutoff-zeroed
+    // miss's teacherEarningAmount is 0 (that's what "forfeited" means), so
+    // recovering what it WOULD have paid requires the group's own rate, not
+    // a value read off the zeroed record itself.
+    const lessonRate = Number(s.group.teacherLessonRateOverride ?? myDefaultRate);
+
     for (const a of s.attendances) {
       if (a.status === "PRESENT") present += 1;
       else if (a.status === "LATE") late += 1;
@@ -173,11 +183,10 @@ export async function getReportAnalytics(filters: ReportFilters): Promise<Report
         (a.status === "EXCUSED_ABSENT" || a.status === "UNEXCUSED_ABSENT") &&
         Number(a.teacherEarningAmount) === 0
       ) {
-        lostToCutoff += Number(a.lessonValueSnapshot);
+        lostToCutoff += lessonRate;
       }
     }
 
-    const lessonRate = Number(s.group.teacherLessonRateOverride ?? myDefaultRate);
     const scheduledLessonsThisMonth = countScheduledLessons(
       s.group.scheduleSlots,
       s.group.startDate,
