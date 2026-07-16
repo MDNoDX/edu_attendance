@@ -32,6 +32,12 @@ async function getLessonRateForGroup(groupId: string) {
  * write (create or correction) so earnings stay consistent no matter what
  * order attendance gets marked/edited in — a teacher fixing a mistake on a
  * lesson from two weeks ago will correctly ripple the cutoff forward.
+ *
+ * Returns the full recomputed list ({ lessonSessionId, teacherEarning }) so
+ * the caller (markAttendance/bulkMarkAttendance) can hand it straight back
+ * to the client and patch the on-screen grid directly, instead of the client
+ * needing a separate follow-up read of the whole month to see the (possibly
+ * retroactively changed) earnings on OTHER lessons for this student.
  */
 async function recomputeStudentEarnings(studentId: string, lessonRate: number) {
   const records = await prisma.attendance.findMany({
@@ -56,6 +62,11 @@ async function recomputeStudentEarnings(studentId: string, lessonRate: number) {
       }),
     ),
   );
+
+  return computed.map((entry) => ({
+    lessonSessionId: entry.lessonSessionId,
+    teacherEarningAmount: entry.teacherEarning,
+  }));
 }
 
 /** Returns the group's active roster for one lesson session, with any existing attendance mark. */
@@ -196,6 +207,7 @@ export async function markAttendance(input: unknown) {
   // rejected promise the Attendance Journal wasn't prepared for, which is
   // exactly the "jumps to another screen" symptom reported. Catch it and
   // hand back a normal { ok: false, error } response instead.
+  let updatedEarnings: { lessonSessionId: string; teacherEarningAmount: number }[];
   try {
     await prisma.attendance.upsert({
       where: { studentId_lessonSessionId: { studentId, lessonSessionId } },
@@ -211,7 +223,7 @@ export async function markAttendance(input: unknown) {
       update: { status, note: resolvedNote, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
     });
 
-    await recomputeStudentEarnings(studentId, rate);
+    updatedEarnings = await recomputeStudentEarnings(studentId, rate);
 
     await prisma.lessonSession.update({
       where: { id: lessonSessionId },
@@ -223,16 +235,28 @@ export async function markAttendance(input: unknown) {
 
   // NOTE: deliberately NOT calling revalidatePath for the group detail page
   // itself. This action is invoked directly from the Attendance Journal
-  // client component, which already refetches getGroupAttendanceJournal()
-  // right after this resolves — that's the single source of truth for the
-  // on-screen grid. Revalidating the currently-active route here would make
-  // Next.js re-run the whole page's Server Component (including its DB
+  // client component. Revalidating the currently-active route here would
+  // make Next.js re-run the whole page's Server Component (including its DB
   // query) on every single click, which is both wasted work and, if that
   // extra query ever hiccups, would surface as the entire page swapping to
   // a 404/error screen mid-click. Only the list page (student counts) needs
   // a cache bust.
   revalidatePath("/dashboard/groups");
-  return { ok: true as const };
+
+  // Hand back everything the client needs to patch its own grid state
+  // directly, rather than relying on a fresh getGroupAttendanceJournal read
+  // right after this write. That immediate re-read raced, on Neon's pooled
+  // serverless connections, with this write's own commit becoming visible —
+  // occasionally coming back with fewer (or zero) sessions for the month,
+  // which made the whole grid appear to "jump" to an empty state right
+  // after a successful mark. Returning the authoritative post-write state
+  // here sidesteps that read-after-write race entirely for the common case.
+  return {
+    ok: true as const,
+    studentId,
+    mark: { status, note: resolvedNote, arrivalTime: resolvedArrivalTime },
+    updatedEarnings,
+  };
 }
 
 export async function bulkMarkAttendance(input: unknown) {

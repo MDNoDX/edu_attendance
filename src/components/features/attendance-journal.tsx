@@ -202,33 +202,49 @@ export function AttendanceJournal({
       toast.error("Saqlanmadi — internet aloqasini tekshirib, qaytadan urinib ko'ring.");
       return;
     }
+    setSavingCell(null);
     if (!res.ok) {
-      setSavingCell(null);
       toast.error(typeof res.error === "string" ? res.error : "Xatolik yuz berdi.");
       return;
     }
     // Marking one cell can shift the consecutive-miss streak and therefore
     // the teacherEarningAmount of OTHER sessions for this student too (a run
-    // of 3+ consecutive misses zeroes the WHOLE run retroactively). A local
-    // single-cell patch would leave those other cells and the per-student /
-    // group totals stale, so re-pull the whole month from the server — this
-    // is the single source of truth the recompute wrote to.
-    //
-    // Wrapped in try/catch: if this refetch ever fails (a transient
-    // serverless DB hiccup, etc.), we show a toast and keep the previous
-    // grid on screen rather than letting the error bubble up to the nearest
-    // error boundary, which would swap the whole page out — exactly the
-    // "jumps to another screen" symptom this is meant to prevent.
-    startTransition(async () => {
-      try {
-        const data = await getGroupAttendanceJournal(groupId, monthDate);
-        setSessions(data.sessions);
-      } catch {
-        toast.error("Yangilanmadi — internet aloqasini tekshirib, sahifani yangilang.");
-      } finally {
-        setSavingCell(null);
-      }
-    });
+    // of 3+ consecutive misses zeroes the WHOLE run retroactively). We used
+    // to handle that by immediately re-fetching the whole month from the
+    // server — but that fresh read occasionally raced with this very write's
+    // commit becoming visible on Neon's pooled serverless connections,
+    // coming back with fewer (sometimes zero) sessions and making the whole
+    // grid appear to "jump" to an empty state right after a successful mark.
+    // The server now returns the authoritative recomputed earnings for every
+    // one of this student's lessons directly in `res`, so we patch the grid
+    // from that response instead of trusting a brand new read.
+    const earningsBySession = new Map(res.updatedEarnings.map((e) => [e.lessonSessionId, e.teacherEarningAmount]));
+    setSessions((prev) =>
+      prev.map((s) => {
+        const newEarning = earningsBySession.get(s.id);
+        if (s.id === sessionId) {
+          return {
+            ...s,
+            marks: {
+              ...s.marks,
+              [studentId]: {
+                status: res.mark.status,
+                note: res.mark.note,
+                arrivalTime: res.mark.arrivalTime,
+                teacherEarningAmount: newEarning ?? 0,
+              },
+            },
+          };
+        }
+        if (newEarning !== undefined && s.marks[studentId]) {
+          return {
+            ...s,
+            marks: { ...s.marks, [studentId]: { ...s.marks[studentId], teacherEarningAmount: newEarning } },
+          };
+        }
+        return s;
+      }),
+    );
   }
 
   function onStatusPick(sessionId: string, studentId: string, status: AttendanceStatus) {
@@ -290,6 +306,7 @@ export function AttendanceJournal({
     let excused = 0;
     let unexcused = 0;
     let earned = 0;
+    const notes: { day: number; note: string }[] = [];
     for (const s of sessions) {
       const mark = s.marks[studentId];
       if (!mark) continue;
@@ -298,8 +315,9 @@ export function AttendanceJournal({
       if (mark.status === "EXCUSED_ABSENT") excused += 1;
       if (mark.status === "UNEXCUSED_ABSENT") unexcused += 1;
       earned += mark.teacherEarningAmount;
+      if (mark.note) notes.push({ day: dayNumber(s.date), note: mark.note });
     }
-    return { present, late, excused, unexcused, earned };
+    return { present, late, excused, unexcused, earned, notes };
   }
 
   return (
@@ -387,7 +405,7 @@ export function AttendanceJournal({
                             {student.lastName} {student.firstName}
                           </button>
                         </PopoverTrigger>
-                        <PopoverContent align="start" className="text-sm">
+                        <PopoverContent align="start" className="max-w-72 text-sm">
                           <p className="mb-2 font-medium">{student.lastName} {student.firstName}</p>
                           <div className="space-y-1 text-muted-foreground">
                             <p>Keldi: <strong className="text-foreground">{summary.present}</strong></p>
@@ -398,6 +416,21 @@ export function AttendanceJournal({
                               Bu oy ulushim: <strong>{formatUZS(summary.earned)}</strong>
                             </p>
                           </div>
+                          {summary.notes.length > 0 && (
+                            <div className="mt-3 space-y-1.5 border-t border-border pt-2">
+                              <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                                <MessageSquareText className="h-3.5 w-3.5" /> Izohlar
+                              </p>
+                              {summary.notes.map((n, i) => (
+                                <p key={i} className="text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground">
+                                    {n.day}-{UZ_MONTHS[monthDate.getMonth()]}:
+                                  </span>{" "}
+                                  {n.note}
+                                </p>
+                              ))}
+                            </div>
+                          )}
                         </PopoverContent>
                       </Popover>
                     </td>
