@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
 import { AttendanceJournal } from "@/components/features/attendance-journal";
 import { TeacherReports } from "@/components/features/teacher-reports";
+import { StudentsManager } from "@/components/features/students-manager";
 import { getGroupAttendanceJournal } from "@/app/actions/attendance";
+import { listStudents } from "@/app/actions/students";
 
 export default async function GroupDetailPage({ params }: { params: Promise<{ groupId: string }> }) {
   const { groupId } = await params;
@@ -26,6 +28,11 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
     throw error;
   }
 
+  // Scoped to this group only — the group detail page is where a teacher
+  // adds students right after creating a group, so the list here should
+  // only ever show this group's own roster, not the full Studentlarim list.
+  const { students: groupStudents, total: groupStudentTotal } = await listStudents({ groupId, pageSize: 200 });
+
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   return (
@@ -39,7 +46,7 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
         </Link>
         <PageHeader
           title={journal.group.name}
-          description={`${journal.group.course.name} · ${journal.group.roomName}`}
+          description={`${journal.group.subject ? journal.group.subject + " · " : ""}${journal.group.roomName}`}
           actions={
             <Badge variant={journal.group.status === "ACTIVE" ? "success" : "secondary"}>
               {journal.group.status === "ACTIVE" ? "Faol" : journal.group.status === "PAUSED" ? "To'xtatilgan" : "Tugagan"}
@@ -47,6 +54,18 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
           }
         />
       </div>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">
+          Studentlar {groupStudentTotal > 0 && `(${groupStudentTotal})`}
+        </h2>
+        <StudentsManager
+          initialStudents={groupStudents as never}
+          initialTotal={groupStudentTotal}
+          groups={[{ id: journal.group.id, name: journal.group.name }]}
+          lockGroupId={journal.group.id}
+        />
+      </section>
 
       <section className="space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">Davomat jurnali</h2>

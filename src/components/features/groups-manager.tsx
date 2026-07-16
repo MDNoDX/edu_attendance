@@ -22,20 +22,17 @@ import { formatDate, formatUZS } from "@/lib/utils";
 
 const DAY_LABELS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
 
-interface Option {
-  id: string;
-  name: string;
-}
-
 interface GroupRow {
   id: string;
   name: string;
+  subject: string | null;
   status: string;
   capacity: number;
   roomName: string;
+  monthlyPrice: unknown;
+  lessonsPerMonth: number;
   startDate: string | Date;
   teacherLessonRateOverride: unknown;
-  course: { id: string; name: string };
   _count: { students: number };
   scheduleSlots: { dayOfWeek: number; startTime: string; endTime: string }[];
 }
@@ -103,11 +100,9 @@ function ScheduleSlotsEditor({
 
 export function GroupsManager({
   initialGroups,
-  courses,
   defaultLessonRate,
 }: {
   initialGroups: GroupRow[];
-  courses: Option[];
   defaultLessonRate: number;
 }) {
   const [groups, setGroups] = useState(initialGroups);
@@ -118,7 +113,7 @@ export function GroupsManager({
 
   const createForm = useForm<GroupInput>({
     resolver: zodResolver(groupSchema),
-    defaultValues: { capacity: 15, scheduleSlots: [defaultScheduleSlot] },
+    defaultValues: { capacity: 15, lessonsPerMonth: 12, scheduleSlots: [defaultScheduleSlot] },
   });
   const createSlots = useFieldArray({ control: createForm.control, name: "scheduleSlots" });
 
@@ -133,7 +128,7 @@ export function GroupsManager({
     }
     toast.success("Guruh yaratildi.");
     setCreateOpen(false);
-    createForm.reset({ capacity: 15, scheduleSlots: [defaultScheduleSlot] });
+    createForm.reset({ capacity: 15, lessonsPerMonth: 12, scheduleSlots: [defaultScheduleSlot] });
     window.location.reload();
   }
 
@@ -141,8 +136,10 @@ export function GroupsManager({
     setEditTarget(group);
     editForm.reset({
       name: group.name,
-      courseId: group.course.id,
+      subject: group.subject ?? "",
       roomName: group.roomName,
+      monthlyPrice: Number(group.monthlyPrice),
+      lessonsPerMonth: group.lessonsPerMonth,
       capacity: group.capacity,
       startDate: new Date(group.startDate),
       teacherLessonRateOverride: group.teacherLessonRateOverride != null ? Number(group.teacherLessonRateOverride) : undefined,
@@ -205,28 +202,33 @@ export function GroupsManager({
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2 col-span-2">
-                  <Label>Kurs</Label>
-                  <Select onValueChange={(v) => createForm.setValue("courseId", v)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Kursni tanlang" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {courses.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-2">
+                  <Label>Fan (ixtiyoriy)</Label>
+                  <Input {...createForm.register("subject")} placeholder="masalan: Ingliz tili" />
                 </div>
                 <div className="space-y-2">
                   <Label>Xona</Label>
                   <Input {...createForm.register("roomName")} placeholder="masalan: 10-xona" />
                 </div>
                 <div className="space-y-2">
+                  <Label>Oylik to&apos;lov (talaba uchun)</Label>
+                  <MoneyInput
+                    value={createForm.watch("monthlyPrice")}
+                    onChange={(v) => createForm.setValue("monthlyPrice", v ?? 0)}
+                    placeholder="720 000"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Oyiga necha dars</Label>
+                  <Input type="number" {...createForm.register("lessonsPerMonth")} placeholder="12" />
+                </div>
+                <div className="space-y-2">
                   <Label>Sig'im</Label>
                   <Input type="number" {...createForm.register("capacity")} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Boshlanish sanasi</Label>
+                  <Input type="date" {...createForm.register("startDate")} />
                 </div>
                 <div className="col-span-2 space-y-2">
                   <Label>Sizning bitta darsdan ulushingiz (ixtiyoriy)</Label>
@@ -239,10 +241,6 @@ export function GroupsManager({
                     Bo&apos;sh qoldirsangiz standart ulushingiz ({formatUZS(defaultLessonRate)}) ishlatiladi. Bu
                     summa — talaba to&apos;lovidan mustaqil — har bir o&apos;tilgan darsdan sizga tushadigan pul.
                   </p>
-                </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Boshlanish sanasi</Label>
-                  <Input type="date" {...createForm.register("startDate")} />
                 </div>
               </div>
 
@@ -281,9 +279,10 @@ export function GroupsManager({
                   </Badge>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
-                  <p>Kurs: <strong>{group.course.name}</strong></p>
+                  {group.subject && <p>Fan: <strong>{group.subject}</strong></p>}
                   <p>Xona: <strong>{group.roomName}</strong></p>
                   <p>Studentlar: <strong>{group._count.students}</strong> / {group.capacity}</p>
+                  <p>Oylik to&apos;lov: <strong>{formatUZS(Number(group.monthlyPrice))}</strong></p>
                   <p>
                     Sizning ulushingiz:{" "}
                     <strong className="text-success">
@@ -344,28 +343,33 @@ export function GroupsManager({
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2 col-span-2">
-                <Label>Kurs</Label>
-                <Select defaultValue={editTarget?.course.id} onValueChange={(v) => editForm.setValue("courseId", v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {courses.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2">
+                <Label>Fan (ixtiyoriy)</Label>
+                <Input {...editForm.register("subject")} placeholder="masalan: Ingliz tili" />
               </div>
               <div className="space-y-2">
                 <Label>Xona</Label>
                 <Input {...editForm.register("roomName")} />
               </div>
               <div className="space-y-2">
+                <Label>Oylik to&apos;lov (talaba uchun)</Label>
+                <MoneyInput
+                  value={editForm.watch("monthlyPrice")}
+                  onChange={(v) => editForm.setValue("monthlyPrice", v ?? 0)}
+                  placeholder="720 000"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Oyiga necha dars</Label>
+                <Input type="number" {...editForm.register("lessonsPerMonth")} />
+              </div>
+              <div className="space-y-2">
                 <Label>Sig'im</Label>
                 <Input type="number" {...editForm.register("capacity")} />
+              </div>
+              <div className="space-y-2">
+                <Label>Boshlanish sanasi</Label>
+                <Input type="date" {...editForm.register("startDate")} />
               </div>
               <div className="col-span-2 space-y-2">
                 <Label>Sizning bitta darsdan ulushingiz (ixtiyoriy)</Label>
@@ -377,10 +381,6 @@ export function GroupsManager({
                 <p className="text-xs text-muted-foreground">
                   Bo&apos;sh qoldirsangiz standart ulushingiz ({formatUZS(defaultLessonRate)}) ishlatiladi.
                 </p>
-              </div>
-              <div className="col-span-2 space-y-2">
-                <Label>Boshlanish sanasi</Label>
-                <Input type="date" {...editForm.register("startDate")} />
               </div>
             </div>
 

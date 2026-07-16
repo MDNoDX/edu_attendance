@@ -15,7 +15,7 @@ export const ATTENDANCE_REPORT_FIELDS: ReportFieldDef[] = [
   { key: "date", label: "Sana", defaultSelected: true },
   { key: "studentName", label: "O'quvchi", defaultSelected: true },
   { key: "groupName", label: "Guruh", defaultSelected: true },
-  { key: "courseName", label: "Kurs", defaultSelected: false },
+  { key: "subjectName", label: "Fan", defaultSelected: false },
   { key: "roomName", label: "Xona", defaultSelected: false },
   { key: "status", label: "Holati", defaultSelected: true },
   { key: "note", label: "Izoh", defaultSelected: false },

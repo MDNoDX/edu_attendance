@@ -131,7 +131,7 @@ export async function getScheduleSessions(filters: ScheduleFilters) {
       // schedule-view.tsx only ever shows a student COUNT for the group,
       // never individual students — `_count` avoids pulling every student's
       // full record (photoUrl included) for every session on the calendar.
-      group: { include: { course: true, _count: { select: { students: { where: { deletedAt: null } } } } } },
+      group: { include: { _count: { select: { students: { where: { deletedAt: null } } } } } },
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });

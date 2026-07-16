@@ -17,19 +17,28 @@ export const usernameSchema = z
   .max(32)
   .regex(/^[a-zA-Z0-9_.]+$/, "Login faqat lotin harflar, raqam, _ va . dan iborat bo'lsin");
 
-export const registerSchema = z.object({
-  username: usernameSchema,
-  password: z.string().min(8, "Parol kamida 8 ta belgi"),
-  fullName: z.string().min(2, "Ism-familiya kiritilishi shart"),
-  email: z.string().email("Email noto'g'ri").optional().or(z.literal("")),
-  phone: z.string().optional(),
-  defaultLessonRate: z.coerce.number().min(0, "Ulush manfiy bo'lishi mumkin emas").default(0),
-  specialization: z.string().optional(),
-});
+// Signup deliberately asks for the minimum needed to create an account —
+// name, a login, and a confirmed password. Email, specialization, and the
+// per-lesson rate are all things a teacher can fill in later from their
+// profile once they're actually using the app; asking for them upfront
+// just adds friction to the one moment a new user is most likely to give up.
+export const registerSchema = z
+  .object({
+    firstName: z.string().min(1, "Ism kiritilishi shart"),
+    lastName: z.string().min(1, "Familiya kiritilishi shart"),
+    username: usernameSchema,
+    password: z.string().min(8, "Parol kamida 8 ta belgi"),
+    confirmPassword: z.string().min(8, "Parolni tasdiqlang"),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Parollar mos kelmadi",
+    path: ["confirmPassword"],
+  });
 
 export const profileUpdateSchema = z.object({
   username: usernameSchema.optional(),
-  fullName: z.string().min(2).optional(),
+  firstName: z.string().min(1).optional(),
+  lastName: z.string().min(1).optional(),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
   photoUrl: z.string().optional(),
@@ -56,12 +65,14 @@ export const changePasswordSchema = z
 export const genderEnum = z.enum(["MALE", "FEMALE"]);
 export const studentStatusEnum = z.enum(["ACTIVE", "INACTIVE", "FINISHED"]);
 
+// gender/birthDate/address/passportOrIdNo are all optional — not every
+// teacher needs or wants to record these for a quick student entry.
 export const studentSchema = z.object({
   firstName: z.string().min(1, "Ism kiritilishi shart"),
   lastName: z.string().min(1, "Familiya kiritilishi shart"),
   middleName: z.string().optional(),
-  gender: genderEnum,
-  birthDate: z.coerce.date(),
+  gender: genderEnum.optional(),
+  birthDate: z.coerce.date().optional(),
   phone: z.string().optional(),
   parentPhone: z.string().min(5, "Ota-ona telefon raqami kiritilishi shart"),
   address: z.string().optional(),
@@ -70,23 +81,14 @@ export const studentSchema = z.object({
   note: z.string().optional(),
   status: studentStatusEnum.default("ACTIVE"),
   startDate: z.coerce.date(),
-  courseId: z.string().min(1, "Kurs tanlanishi shart"),
   groupId: z.string().min(1, "Guruh tanlanishi shart"),
 });
 
 // ----------------------------------------------------------------------------
-// COURSES & GROUPS — fully self-service, scoped to the logged-in teacher.
+// GROUPS — fully self-service, scoped to the logged-in teacher. There is no
+// separate Course template entity: a group directly carries its own name,
+// subject, and monthly tuition price.
 // ----------------------------------------------------------------------------
-
-export const courseSchema = z.object({
-  name: z.string().min(1, "Kurs nomi kiritilishi shart"),
-  subject: z.string().optional(),
-  description: z.string().optional(),
-  durationMonths: z.coerce.number().int().min(1, "Davomiylik kamida 1 oy"),
-  monthlyPrice: z.coerce.number().min(0, "Narx manfiy bo'lishi mumkin emas"),
-  lessonsPerMonth: z.coerce.number().int().min(1, "Kamida 1 ta dars bo'lishi kerak"),
-  isActive: z.boolean().default(true),
-});
 
 export const scheduleSlotSchema = z.object({
   dayOfWeek: z.coerce.number().int().min(0).max(6),
@@ -98,8 +100,10 @@ export const groupStatusEnum = z.enum(["ACTIVE", "FINISHED", "PAUSED"]);
 
 export const groupSchema = z.object({
   name: z.string().min(1, "Guruh nomi kiritilishi shart"),
-  courseId: z.string().min(1, "Kurs tanlanishi shart"),
+  subject: z.string().optional(),
   roomName: z.string().min(1, "Xona nomi kiritilishi shart"),
+  monthlyPrice: z.coerce.number().min(0, "Narx manfiy bo'lishi mumkin emas"),
+  lessonsPerMonth: z.coerce.number().int().min(1, "Kamida 1 ta dars bo'lishi kerak"),
   capacity: z.coerce.number().int().min(1).default(15),
   status: groupStatusEnum.default("ACTIVE"),
   startDate: z.coerce.date(),
@@ -173,7 +177,8 @@ export const recordPaymentSchema = z.object({
 // ----------------------------------------------------------------------------
 
 export const adminUpdateTeacherSchema = z.object({
-  fullName: z.string().min(2, "Ism-familiya kiritilishi shart").optional(),
+  firstName: z.string().min(1, "Ism kiritilishi shart").optional(),
+  lastName: z.string().min(1, "Familiya kiritilishi shart").optional(),
   username: usernameSchema.optional(),
   email: z.string().email("Email noto'g'ri").optional().or(z.literal("")),
   phone: z.string().optional(),
@@ -191,7 +196,6 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type StudentInput = z.infer<typeof studentSchema>;
-export type CourseInput = z.infer<typeof courseSchema>;
 export type GroupInput = z.infer<typeof groupSchema>;
 export type MarkAttendanceInput = z.infer<typeof markAttendanceSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;

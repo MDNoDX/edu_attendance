@@ -32,13 +32,15 @@ interface TeacherRow {
   id: string;
   username: string;
   fullName: string;
+  firstName: string;
+  lastName: string;
   email: string | null;
   phone: string | null;
   defaultLessonRate: number;
   specialization: string | null;
   isActive: boolean;
   createdAt: string;
-  _count: { students: number; groups: number; courses: number };
+  _count: { students: number; groups: number };
 }
 
 export function TeachersManager({
@@ -64,7 +66,8 @@ export function TeachersManager({
   function openEdit(teacher: TeacherRow) {
     setEditTarget(teacher);
     editForm.reset({
-      fullName: teacher.fullName,
+      firstName: teacher.firstName,
+      lastName: teacher.lastName,
       username: teacher.username,
       email: teacher.email || "",
       phone: teacher.phone || "",
@@ -86,7 +89,11 @@ export function TeachersManager({
         t.id === editTarget.id
           ? {
               ...t,
-              fullName: data.fullName ?? t.fullName,
+              firstName: data.firstName ?? t.firstName,
+              lastName: data.lastName ?? t.lastName,
+              fullName: data.firstName || data.lastName
+                ? `${data.lastName ?? t.lastName} ${data.firstName ?? t.firstName}`
+                : t.fullName,
               username: data.username ?? t.username,
               email: data.email ?? t.email,
               phone: data.phone ?? t.phone,
@@ -216,7 +223,7 @@ export function TeachersManager({
                   </TableCell>
                   <TableCell className="text-sm font-medium">{formatUZS(teacher.defaultLessonRate)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {teacher._count.students} o&apos;quvchi · {teacher._count.groups} guruh · {teacher._count.courses} kurs
+                    {teacher._count.students} o&apos;quvchi · {teacher._count.groups} guruh
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -260,8 +267,12 @@ export function TeachersManager({
           <form onSubmit={editForm.handleSubmit(onEdit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Ism-familiya</Label>
-                <Input {...editForm.register("fullName")} />
+                <Label>Ism</Label>
+                <Input {...editForm.register("firstName")} />
+              </div>
+              <div className="space-y-2">
+                <Label>Familiya</Label>
+                <Input {...editForm.register("lastName")} />
               </div>
               <div className="space-y-2">
                 <Label>Login</Label>

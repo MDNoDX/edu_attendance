@@ -1,11 +1,11 @@
 import { formatDate, formatUZS } from "@/lib/utils";
 import { ATTENDANCE_STATUS_LABEL_UZ } from "./fields";
-import type { Attendance, Student, LessonSession, Group, Course } from "@prisma/client";
+import type { Attendance, Student, LessonSession, Group } from "@prisma/client";
 
 type FullAttendanceRow = Attendance & {
   student: Student;
   lessonSession: LessonSession & {
-    group: Group & { course: Course };
+    group: Group;
   };
 };
 
@@ -13,7 +13,7 @@ export interface ReportRow {
   date: string;
   studentName: string;
   groupName: string;
-  courseName: string;
+  subjectName: string;
   roomName: string;
   status: string;
   note: string;
@@ -27,7 +27,7 @@ export function buildAttendanceReportRows(records: FullAttendanceRow[]): ReportR
     date: formatDate(r.lessonSession.date),
     studentName: `${r.student.lastName} ${r.student.firstName}`,
     groupName: r.lessonSession.group.name,
-    courseName: r.lessonSession.group.course.name,
+    subjectName: r.lessonSession.group.subject ?? "",
     roomName: r.lessonSession.group.roomName,
     status: ATTENDANCE_STATUS_LABEL_UZ[r.status] ?? r.status,
     note: r.note ?? "",

@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma, toFriendlyDbError } from "@/lib/db";
-import { hashPassword, createSessionCookie } from "@/lib/auth";
+import { hashPassword, createSessionCookieAndRecord } from "@/lib/auth";
 import { registerSchema } from "@/lib/validations";
 import { isRateLimited, recordAttempt, getClientIp } from "@/lib/rate-limit";
+import { formatFullName } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -38,8 +39,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { username, password, fullName, email, phone, defaultLessonRate, specialization } =
-    parsed.data;
+  const { username, password, firstName, lastName } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
@@ -49,45 +49,36 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (email) {
-    const existingEmail = await prisma.user.findUnique({ where: { email } });
-    if (existingEmail) {
-      return NextResponse.json(
-        { error: "Bu email allaqachon ro'yxatdan o'tgan." },
-        { status: 409 },
-      );
-    }
-  }
-
   const passwordHash = await hashPassword(password);
 
-  // The findUnique checks above narrow the common case, but two signups for
-  // the same username/email arriving at once can still both pass them (a
-  // classic check-then-act race) — the DB's own unique constraint is the
-  // real guard, so this create() must never throw uncaught past this point.
+  // The findUnique check above narrows the common case, but two signups for
+  // the same username arriving at once can still both pass it (a classic
+  // check-then-act race) — the DB's own unique constraint is the real guard,
+  // so this create() must never throw uncaught past this point.
   let user;
   try {
     user = await prisma.user.create({
       data: {
         username,
         passwordHash,
-        fullName,
-        email: email ? email : null,
-        phone: phone || null,
-        defaultLessonRate,
-        specialization: specialization || null,
+        firstName,
+        lastName,
+        fullName: formatFullName(firstName, lastName),
       },
     });
   } catch (err) {
     return NextResponse.json({ error: toFriendlyDbError(err) }, { status: 409 });
   }
 
-  await createSessionCookie({
-    sub: user.id,
-    username: user.username,
-    fullName: user.fullName,
-    role: user.role,
-  });
+  await createSessionCookieAndRecord(
+    {
+      sub: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      role: user.role,
+    },
+    { userAgent: request.headers.get("user-agent"), ip },
+  );
 
   return NextResponse.json({
     ok: true,

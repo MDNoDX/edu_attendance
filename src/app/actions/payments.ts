@@ -11,7 +11,7 @@ function firstOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-/** Ensures a (student, billingMonth) Payment row exists, seeded from the student's course price. Idempotent. */
+/** Ensures a (student, billingMonth) Payment row exists, seeded from the student's group's monthly price. Idempotent. */
 export async function ensureBillingForStudent(studentId: string, billingMonth: Date) {
   const month = firstOfMonth(billingMonth);
   const existing = await prisma.payment.findUnique({
@@ -19,13 +19,13 @@ export async function ensureBillingForStudent(studentId: string, billingMonth: D
   });
   if (existing) return serializeDecimals(existing);
 
-  const student = await prisma.student.findUniqueOrThrow({ where: { id: studentId }, include: { course: true } });
+  const student = await prisma.student.findUniqueOrThrow({ where: { id: studentId }, include: { group: true } });
   const payment = await prisma.payment.create({
     data: {
       userId: student.userId,
       studentId,
       billingMonth: month,
-      amountDue: student.course.monthlyPrice,
+      amountDue: student.group.monthlyPrice,
       amountPaid: 0,
       status: "UNPAID",
     },

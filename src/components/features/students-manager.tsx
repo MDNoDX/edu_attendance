@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -20,10 +20,9 @@ import { studentSchema, type StudentInput } from "@/lib/validations";
 import { createStudent, updateStudent, deleteStudent, listStudents, type StudentFilters } from "@/app/actions/students";
 import { formatDate, initials } from "@/lib/utils";
 
-interface CourseOption {
+interface GroupOption {
   id: string;
   name: string;
-  groups: { id: string; name: string }[];
 }
 
 interface StudentRow {
@@ -36,18 +35,20 @@ interface StudentRow {
   status: string;
   startDate: string | Date;
   photoUrl?: string | null;
-  course: { id: string; name: string };
   group: { id: string; name: string; roomName: string };
 }
 
 export function StudentsManager({
   initialStudents,
   initialTotal,
-  courses,
+  groups,
+  /** When set, the create dialog opens pre-locked to this group (used from the group detail page's "student qo'shish" shortcut) — the group picker is hidden entirely instead of just pre-selected, since there's nothing to choose from that view. */
+  lockGroupId,
 }: {
   initialStudents: StudentRow[];
   initialTotal: number;
-  courses: CourseOption[];
+  groups: GroupOption[];
+  lockGroupId?: string;
 }) {
   const [students, setStudents] = useState(initialStudents);
   const [total, setTotal] = useState(initialTotal);
@@ -55,33 +56,17 @@ export function StudentsManager({
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [groupFilter, setGroupFilter] = useState<string>("ALL");
 
-  const allGroups = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const c of courses) {
-      for (const g of c.groups) map.set(g.id, g.name);
-    }
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [courses]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<StudentRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StudentRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const createForm = useForm<StudentInput>({ resolver: zodResolver(studentSchema), defaultValues: { status: "ACTIVE" } });
+  const createForm = useForm<StudentInput>({
+    resolver: zodResolver(studentSchema),
+    defaultValues: { status: "ACTIVE", groupId: lockGroupId },
+  });
   const editForm = useForm<StudentInput>({ resolver: zodResolver(studentSchema) });
-
-  const selectedCreateCourseId = createForm.watch("courseId");
-  const selectedEditCourseId = editForm.watch("courseId");
-
-  const createGroupOptions = useMemo(
-    () => courses.find((c) => c.id === selectedCreateCourseId)?.groups ?? [],
-    [courses, selectedCreateCourseId],
-  );
-  const editGroupOptions = useMemo(
-    () => courses.find((c) => c.id === selectedEditCourseId)?.groups ?? [],
-    [courses, selectedEditCourseId],
-  );
 
   function refetch(filters: StudentFilters) {
     startTransition(async () => {
@@ -94,7 +79,12 @@ export function StudentsManager({
   function currentFilters(overrides: Partial<{ search: string; status: string; groupId: string }> = {}) {
     const nextSearch = overrides.search ?? search;
     const nextStatus = overrides.status ?? statusFilter;
-    const nextGroup = overrides.groupId ?? groupFilter;
+    // A group-scoped view (lockGroupId set) always stays scoped to that one
+    // group — there's no filter UI to change it, so the group filter state
+    // (which defaults to "ALL") must never override the lock here, or every
+    // refetch after a create/edit would silently widen back out to every
+    // student across every group.
+    const nextGroup = lockGroupId ?? (overrides.groupId ?? groupFilter);
     return {
       search: nextSearch,
       status: nextStatus === "ALL" ? undefined : (nextStatus as never),
@@ -126,7 +116,7 @@ export function StudentsManager({
     }
     toast.success("Student qo'shildi.");
     setCreateOpen(false);
-    createForm.reset({ status: "ACTIVE" });
+    createForm.reset({ status: "ACTIVE", groupId: lockGroupId });
     refetch(currentFilters());
   }
 
@@ -140,7 +130,6 @@ export function StudentsManager({
       parentPhone: student.parentPhone,
       status: student.status as never,
       startDate: new Date(student.startDate),
-      courseId: student.course.id,
       groupId: student.group.id,
       photoUrl: student.photoUrl ?? "",
     } as never);
@@ -188,19 +177,24 @@ export function StudentsManager({
               <SelectItem value="FINISHED">Tugatgan</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={groupFilter} onValueChange={onGroupFilterChange}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Guruh" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Barcha guruhlar</SelectItem>
-              {allGroups.map((g) => (
-                <SelectItem key={g.id} value={g.id}>
-                  {g.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {/* On a group-scoped view (opened from inside a group's own page) every
+              row already belongs to that one group, so a group filter here would
+              just be confusing clutter — only show it on the full Studentlarim list. */}
+          {!lockGroupId && (
+            <Select value={groupFilter} onValueChange={onGroupFilterChange}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="Guruh" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Barcha guruhlar</SelectItem>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -235,10 +229,10 @@ export function StudentsManager({
                 <Input {...createForm.register("middleName")} />
               </div>
               <div className="space-y-2">
-                <Label>Jinsi</Label>
+                <Label>Jinsi (ixtiyoriy)</Label>
                 <Select onValueChange={(v) => createForm.setValue("gender", v as never)}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Tanlang" />
+                    <SelectValue placeholder="Tanlanmagan" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="MALE">Erkak</SelectItem>
@@ -247,7 +241,7 @@ export function StudentsManager({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Tug'ilgan sana</Label>
+                <Label>Tug'ilgan sana (ixtiyoriy)</Label>
                 <Input type="date" {...createForm.register("birthDate")} />
               </div>
               <div className="space-y-2">
@@ -283,36 +277,23 @@ export function StudentsManager({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Kurs</Label>
-                <Select onValueChange={(v) => createForm.setValue("courseId", v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Tanlang" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {courses.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Guruh</Label>
-                <Select onValueChange={(v) => createForm.setValue("groupId", v)} disabled={!selectedCreateCourseId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Avval kursni tanlang" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {createGroupOptions.map((g) => (
-                      <SelectItem key={g.id} value={g.id}>
-                        {g.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!lockGroupId && (
+                <div className="space-y-2">
+                  <Label>Guruh</Label>
+                  <Select onValueChange={(v) => createForm.setValue("groupId", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tanlang" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {groups.map((g) => (
+                        <SelectItem key={g.id} value={g.id}>
+                          {g.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="col-span-2 space-y-2">
                 <Label>Izoh (ixtiyoriy)</Label>
                 <Input {...createForm.register("note")} />
@@ -334,7 +315,7 @@ export function StudentsManager({
           <TableHeader>
             <TableRow>
               <TableHead>Student</TableHead>
-              <TableHead>Kurs / Guruh</TableHead>
+              <TableHead>Guruh</TableHead>
               <TableHead>Xona</TableHead>
               <TableHead>Telefon</TableHead>
               <TableHead>Holati</TableHead>
@@ -354,11 +335,7 @@ export function StudentsManager({
                   </Avatar>
                   {student.lastName} {student.firstName}
                 </TableCell>
-                <TableCell>
-                  {student.course.name}
-                  <br />
-                  <span className="text-xs text-muted-foreground">{student.group.name}</span>
-                </TableCell>
+                <TableCell>{student.group.name}</TableCell>
                 <TableCell className="text-sm">{student.group.roomName}</TableCell>
                 <TableCell>{student.phone || student.parentPhone}</TableCell>
                 <TableCell>
@@ -439,21 +416,6 @@ export function StudentsManager({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Kurs</Label>
-              <Select defaultValue={editTarget?.course.id} onValueChange={(v) => editForm.setValue("courseId", v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {courses.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="col-span-2 space-y-2">
               <Label>Guruh</Label>
               <Select defaultValue={editTarget?.group.id} onValueChange={(v) => editForm.setValue("groupId", v)}>
@@ -461,7 +423,7 @@ export function StudentsManager({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(editGroupOptions.length ? editGroupOptions : courses.find((c) => c.id === editTarget?.course.id)?.groups ?? []).map((g) => (
+                  {groups.map((g) => (
                     <SelectItem key={g.id} value={g.id}>
                       {g.name}
                     </SelectItem>

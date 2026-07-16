@@ -33,6 +33,11 @@ export function formatDateTime(date: Date | string): string {
   }).format(d);
 }
 
+/** Combines firstName/lastName into the single display string cached as User.fullName. */
+export function formatFullName(firstName: string, lastName: string): string {
+  return [firstName, lastName].filter(Boolean).join(" ").trim();
+}
+
 export function initials(fullName: string): string {
   return fullName
     .split(" ")
@@ -40,6 +45,34 @@ export function initials(fullName: string): string {
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase())
     .join("");
+}
+
+/**
+ * Turns a raw User-Agent header into a short, human-friendly label like
+ * "Chrome · Windows" or "Safari · iPhone" for the profile page's device
+ * list. Deliberately a coarse, best-effort parser (not a full UA-parsing
+ * library) — this only ever needs to be recognizable to the teacher looking
+ * at their own device list, not byte-perfect.
+ */
+export function parseUserAgent(ua: string | null | undefined): string {
+  if (!ua) return "Noma'lum qurilma";
+
+  let os = "Noma'lum";
+  if (/iphone/i.test(ua)) os = "iPhone";
+  else if (/ipad/i.test(ua)) os = "iPad";
+  else if (/android/i.test(ua)) os = "Android";
+  else if (/mac os/i.test(ua)) os = "Mac";
+  else if (/windows/i.test(ua)) os = "Windows";
+  else if (/linux/i.test(ua)) os = "Linux";
+
+  let browser = "Brauzer";
+  if (/edg\//i.test(ua)) browser = "Edge";
+  else if (/opr\/|opera/i.test(ua)) browser = "Opera";
+  else if (/chrome\//i.test(ua) && !/chromium/i.test(ua)) browser = "Chrome";
+  else if (/firefox\//i.test(ua)) browser = "Firefox";
+  else if (/safari\//i.test(ua) && !/chrome\//i.test(ua)) browser = "Safari";
+
+  return `${browser} · ${os}`;
 }
 
 export function slugify(input: string): string {

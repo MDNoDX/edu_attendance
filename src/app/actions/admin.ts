@@ -16,6 +16,7 @@ import {
 import { adminUpdateTeacherSchema, adminResetPasswordSchema } from "@/lib/validations";
 import { serializeDecimals } from "@/lib/serialize";
 import { ADMIN_PERMISSIONS, isValidAdminPermission } from "@/lib/permissions";
+import { formatFullName } from "@/lib/utils";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
@@ -39,6 +40,8 @@ export async function listAllTeachers() {
     select: {
       id: true,
       username: true,
+      firstName: true,
+      lastName: true,
       fullName: true,
       email: true,
       phone: true,
@@ -47,7 +50,7 @@ export async function listAllTeachers() {
       specialization: true,
       isActive: true,
       createdAt: true,
-      _count: { select: { students: true, groups: true, courses: true } },
+      _count: { select: { students: true, groups: true } },
     },
   });
 
@@ -62,6 +65,8 @@ export async function getTeacherById(userId: string) {
     select: {
       id: true,
       username: true,
+      firstName: true,
+      lastName: true,
       fullName: true,
       email: true,
       phone: true,
@@ -99,10 +104,19 @@ export async function updateTeacherByAdmin(userId: string, input: unknown) {
     }
   }
 
+  // Same denormalized-fullName-cache concern as updateProfile() in
+  // src/app/actions/profile.ts — recompute it whenever either name part is
+  // touched so it never drifts from firstName/lastName.
+  const fullNamePatch =
+    rest.firstName !== undefined || rest.lastName !== undefined
+      ? { fullName: formatFullName(rest.firstName ?? teacher.firstName, rest.lastName ?? teacher.lastName) }
+      : {};
+
   await prisma.user.update({
     where: { id: userId },
     data: {
       ...rest,
+      ...fullNamePatch,
       ...(username ? { username } : {}),
       ...(email !== undefined ? { email: email || null } : {}),
     },

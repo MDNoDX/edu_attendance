@@ -12,7 +12,6 @@ export async function listGroups() {
   const groups = await prisma.group.findMany({
     where: { userId: session.sub, deletedAt: null },
     include: {
-      course: true,
       // The groups list only ever shows a student COUNT (see
       // groups-manager.tsx), never individual student fields — fetching
       // every field (including each student's full base64 photoUrl) of
@@ -31,7 +30,6 @@ export async function getGroup(groupId: string) {
   const group = await prisma.group.findFirst({
     where: { id: groupId, userId: session.sub },
     include: {
-      course: true,
       students: { where: { deletedAt: null }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] },
       scheduleSlots: true,
     },
@@ -76,9 +74,6 @@ export async function createGroup(input: unknown) {
   const parsed = groupSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: parsed.error.flatten() };
   const { scheduleSlots, ...data } = parsed.data;
-
-  const course = await prisma.course.findFirst({ where: { id: data.courseId, userId: session.sub } });
-  if (!course) return { ok: false as const, error: "Kurs topilmadi." };
 
   const conflict = await assertNoRoomConflict(session.sub, data.roomName, scheduleSlots);
   if (conflict) return { ok: false as const, error: conflict };

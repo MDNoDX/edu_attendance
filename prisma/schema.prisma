@@ -84,10 +84,18 @@ model User {
   id           String   @id @default(cuid())
   username     String   @unique
   passwordHash String
-  fullName     String
-  email        String?  @unique
-  phone        String?
-  photoUrl     String?
+
+  /// firstName/lastName are the fields actually collected at signup/profile
+  /// edit. `fullName` is a denormalized cache of `${firstName} ${lastName}`,
+  /// kept in sync at every write (see formatFullName() in src/lib/utils.ts)
+  /// so the dozens of places that only ever need to DISPLAY a name didn't
+  /// all need to change when this split from a single field.
+  firstName String @default("")
+  lastName  String @default("")
+  fullName  String
+  email     String? @unique
+  phone     String?
+  photoUrl  String?
 
   role UserRole @default(TEACHER)
 
@@ -115,61 +123,43 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  courses        Course[]
   groups         Group[]
   lessonSessions LessonSession[]
   students       Student[]
   payments       Payment[]
+  sessions       Session[]
 
   @@map("users")
 }
 
 // ----------------------------------------------------------------------------
-// ACADEMIC STRUCTURE: Courses (price templates) and Groups (actual cohorts)
+// GROUPS — a concrete class/cohort of students, meeting on a recurring
+// weekly schedule in a named room. There is no separate "Course" template
+// entity — a teacher just creates a Group directly with its own name and
+// monthly tuition price, which is simpler for a single-tenant self-service
+// app where courses and groups were always effectively 1:1 in practice.
 // ----------------------------------------------------------------------------
 
-model Course {
+/// A concrete class/cohort of students, meeting on a recurring weekly
+/// schedule in a named room.
+model Group {
   id     String @id @default(cuid())
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name           String
-  /// Free-text subject/label, e.g. "Ingliz tili", "Fon.A 2x1,5".
-  subject        String?
-  description    String?
-  durationMonths Int
-  /// Monthly tuition price in UZS, e.g. 720000.
-  monthlyPrice   Decimal @db.Decimal(14, 2)
-  /// How many lessons are held per month, e.g. 12. Used to derive the
-  /// per-lesson value: monthlyPrice / lessonsPerMonth.
-  lessonsPerMonth Int
-  isActive        Boolean @default(true)
-
-  groups   Group[]
-  students Student[]
-
-  deletedAt DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  @@index([userId])
-  @@map("courses")
-}
-
-/// A concrete class/cohort of students following one Course, meeting on a
-/// recurring weekly schedule in a named room.
-model Group {
-  id       String @id @default(cuid())
-  userId   String
-  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
-
   name     String
+  /// Free-text subject/label, e.g. "Ingliz tili", optional.
+  subject  String?
   /// Plain text room label (e.g. "10-xona") — no separate room booking
   /// system, since each teacher's schedule is independent of every other
   /// teacher's.
   roomName String
+
+  /// Monthly tuition price charged to students in this group, in UZS.
+  monthlyPrice Decimal @db.Decimal(14, 2)
+  /// How many lessons are held per month, e.g. 12. Used to derive the
+  /// per-lesson value: monthlyPrice / lessonsPerMonth.
+  lessonsPerMonth Int
 
   capacity  Int         @default(15)
   status    GroupStatus @default(ACTIVE)
@@ -189,7 +179,6 @@ model Group {
   updatedAt DateTime  @updatedAt
 
   @@index([userId])
-  @@index([courseId])
   @@index([status])
   @@map("groups")
 }
@@ -247,8 +236,10 @@ model Student {
   firstName      String
   lastName       String
   middleName     String? // Sharif
-  gender         Gender
-  birthDate      DateTime      @db.Date
+  /// Optional — not every teacher wants/needs to record this.
+  gender         Gender?
+  /// Optional — not every teacher wants/needs to record this.
+  birthDate      DateTime?     @db.Date
   phone          String?
   parentPhone    String
   address        String?
@@ -258,10 +249,8 @@ model Student {
   status         StudentStatus @default(ACTIVE)
   startDate      DateTime      @db.Date
 
-  courseId String
-  course   Course @relation(fields: [courseId], references: [id], onDelete: Restrict)
-  groupId  String
-  group    Group  @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  groupId String
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Restrict)
 
   attendances Attendance[]
   payments    Payment[]
@@ -272,7 +261,6 @@ model Student {
 
   @@index([userId])
   @@index([groupId])
-  @@index([courseId])
   @@index([status])
   @@index([lastName, firstName])
   @@map("students")
@@ -363,6 +351,35 @@ model RateLimitAttempt {
 
   @@index([key, createdAt])
   @@map("rate_limit_attempts")
+}
+
+// ----------------------------------------------------------------------------
+// SESSIONS — one row per issued login, so the profile page can show "which
+// devices are logged into your account" and let a teacher revoke a device
+// that isn't theirs. The JWT itself stays the actual auth mechanism (no
+// per-request DB lookup for every action) — this table is only consulted at
+// login (to create a row) and on the profile page (to list/revoke). A
+// session is force-logged-out by checking `revokedAt` only where it's
+// already being read (profile page's own requests), not on every request.
+// ----------------------------------------------------------------------------
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Short random id embedded in the JWT itself (`sessionId` claim) — lets a
+  /// specific device's token be identified/labeled without storing the
+  /// token itself.
+  tokenId   String   @unique
+  userAgent String?
+  ip        String?
+  createdAt DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@map("sessions")
 }
 
 model PaymentTransaction {

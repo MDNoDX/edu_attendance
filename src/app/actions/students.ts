@@ -10,7 +10,6 @@ import type { StudentStatus } from "@prisma/client";
 export interface StudentFilters {
   search?: string;
   status?: StudentStatus;
-  courseId?: string;
   groupId?: string;
   page?: number;
   pageSize?: number;
@@ -23,7 +22,6 @@ export async function listStudents(filters: StudentFilters = {}) {
 
   const where: Record<string, unknown> = { userId: session.sub, deletedAt: null };
   if (filters.status) where.status = filters.status;
-  if (filters.courseId) where.courseId = filters.courseId;
   if (filters.groupId) where.groupId = filters.groupId;
   if (filters.search) {
     where.OR = [
@@ -37,7 +35,7 @@ export async function listStudents(filters: StudentFilters = {}) {
   const [students, total] = await Promise.all([
     prisma.student.findMany({
       where,
-      include: { course: true, group: true },
+      include: { group: true },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
@@ -53,7 +51,6 @@ export async function getStudent(studentId: string) {
   const student = await prisma.student.findFirst({
     where: { id: studentId, userId: session.sub, deletedAt: null },
     include: {
-      course: true,
       group: true,
       payments: { orderBy: { billingMonth: "desc" } },
     },
@@ -66,11 +63,7 @@ export async function createStudent(input: unknown) {
   const parsed = studentSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: parsed.error.flatten() };
 
-  const [course, group] = await Promise.all([
-    prisma.course.findFirst({ where: { id: parsed.data.courseId, userId: session.sub } }),
-    prisma.group.findFirst({ where: { id: parsed.data.groupId, userId: session.sub } }),
-  ]);
-  if (!course) return { ok: false as const, error: "Kurs topilmadi." };
+  const group = await prisma.group.findFirst({ where: { id: parsed.data.groupId, userId: session.sub } });
   if (!group) return { ok: false as const, error: "Guruh topilmadi." };
 
   // NOTE: deliberately NOT revalidating /dashboard/groups/[groupId] here (only

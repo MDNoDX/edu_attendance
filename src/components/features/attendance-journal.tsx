@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   RefreshCw,
   CalendarX2,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -306,7 +307,7 @@ export function AttendanceJournal({
     let excused = 0;
     let unexcused = 0;
     let earned = 0;
-    const notes: { day: number; note: string }[] = [];
+    const notes: { day: number; note: string; sessionId: string }[] = [];
     for (const s of sessions) {
       const mark = s.marks[studentId];
       if (!mark) continue;
@@ -315,7 +316,7 @@ export function AttendanceJournal({
       if (mark.status === "EXCUSED_ABSENT") excused += 1;
       if (mark.status === "UNEXCUSED_ABSENT") unexcused += 1;
       earned += mark.teacherEarningAmount;
-      if (mark.note) notes.push({ day: dayNumber(s.date), note: mark.note });
+      if (mark.note) notes.push({ day: dayNumber(s.date), note: mark.note, sessionId: s.id });
     }
     return { present, late, excused, unexcused, earned, notes };
   }
@@ -421,13 +422,27 @@ export function AttendanceJournal({
                               <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                                 <MessageSquareText className="h-3.5 w-3.5" /> Izohlar
                               </p>
-                              {summary.notes.map((n, i) => (
-                                <p key={i} className="text-xs text-muted-foreground">
-                                  <span className="font-medium text-foreground">
-                                    {n.day}-{UZ_MONTHS[monthDate.getMonth()]}:
-                                  </span>{" "}
-                                  {n.note}
-                                </p>
+                              {summary.notes.map((n) => (
+                                <div key={n.sessionId} className="flex items-start justify-between gap-1.5 text-xs text-muted-foreground">
+                                  <p>
+                                    <span className="font-medium text-foreground">
+                                      {n.day}-{UZ_MONTHS[monthDate.getMonth()]}:
+                                    </span>{" "}
+                                    {n.note}
+                                  </p>
+                                  {/* This is the one persistent, discoverable place a teacher
+                                      can come back to view AND edit a note they left earlier —
+                                      without having to remember or re-find the exact day's cell
+                                      in the grid above. */}
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded p-0.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+                                    aria-label="Izohni tahrirlash"
+                                    onClick={() => setNoteDialog({ sessionId: n.sessionId, studentId: student.id, note: n.note })}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           )}

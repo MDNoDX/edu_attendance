@@ -1,14 +1,8 @@
-import { PageHeader } from "@/components/shared/page-header";
-import { CoursesManager } from "@/components/features/courses-manager";
-import { listCourses } from "@/app/actions/courses";
+import { redirect } from "next/navigation";
 
-export default async function CoursesPage() {
-  const courses = await listCourses();
-
-  return (
-    <div className="space-y-6">
-      <PageHeader title="Kurslarim" description="Narx va davomiylik shabloni sifatidagi kurslaringiz" />
-      <CoursesManager initialCourses={courses as never} />
-    </div>
-  );
+// Removed: "Kurslarim" no longer exists as a separate section — course
+// fields (name, subject, monthly price) are now set directly on a Group.
+// Safe to delete this entire src/app/dashboard/courses directory.
+export default function Deprecated() {
+  redirect("/dashboard/groups");
 }

@@ -31,6 +31,18 @@ export interface SessionPayload {
   fullName: string;
   role: "TEACHER" | "SUPER_ADMIN";
   impersonatorId?: string;
+  /**
+   * Correlates this JWT with a row in the `sessions` table (see
+   * prisma/schema.prisma's Session model) so the profile page can list and
+   * let the teacher forget their own logged-in devices. Optional so tokens
+   * issued before this field existed keep working — they just won't show up
+   * in the device list. Deliberately NOT re-verified against the database on
+   * every request (that would mean a DB read on every single action, for a
+   * feature that's purely informational) — "forgetting" a device here is a
+   * visibility/audit action, not an instant server-side kill switch; the
+   * token still naturally expires via its own 30-day TTL either way.
+   */
+  tokenId?: string;
   [key: string]: unknown;
 }
 
@@ -75,6 +87,40 @@ export async function createSessionCookie(payload: SessionPayload) {
 export async function destroySessionCookie() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
+}
+
+/**
+ * The one place a brand-new login (signup or password login) both issues the
+ * session cookie AND records/refreshes the corresponding `sessions` table
+ * row, so the two can never drift apart. Reuses `existingTokenId` when
+ * re-signing an already-logged-in user's cookie (e.g. after a profile edit)
+ * so that action doesn't spawn a phantom extra "device" or silently detach
+ * the current one from the teacher's own device list.
+ */
+export async function createSessionCookieAndRecord(
+  payload: Omit<SessionPayload, "tokenId">,
+  meta: { userAgent?: string | null; ip?: string | null } = {},
+  existingTokenId?: string,
+): Promise<string> {
+  const tokenId = existingTokenId ?? crypto.randomUUID();
+  await createSessionCookie({ ...payload, tokenId });
+
+  await prisma.session.upsert({
+    where: { tokenId },
+    create: {
+      tokenId,
+      userId: payload.sub,
+      userAgent: meta.userAgent ?? null,
+      ip: meta.ip ?? null,
+    },
+    update: {
+      lastSeenAt: new Date(),
+      ...(meta.userAgent ? { userAgent: meta.userAgent } : {}),
+      ...(meta.ip ? { ip: meta.ip } : {}),
+    },
+  });
+
+  return tokenId;
 }
 
 export const SESSION_COOKIE_NAME = SESSION_COOKIE;

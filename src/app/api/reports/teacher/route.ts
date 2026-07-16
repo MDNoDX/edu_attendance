@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { getAttendanceInRange } from "@/app/actions/attendance";
+import { getReportAnalytics } from "@/app/actions/reports";
 import { buildAttendanceReportRows } from "@/lib/reports/build-rows";
-import { buildAttendanceExcelReport } from "@/lib/reports/excel";
+import { buildAttendanceExcelReport, type ReportSummaryItem } from "@/lib/reports/excel";
 import { buildAttendancePdfReport } from "@/lib/reports/pdf";
 import { resolveRequestedFields } from "@/lib/reports/fields";
 import { resolvePeriodRange, periodLabelUZ, type ReportPeriod } from "@/lib/reports/period";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatUZS } from "@/lib/utils";
 
 export const runtime = "nodejs";
 // This route reads the session cookie (via requireSession) on every request,
@@ -58,7 +59,14 @@ export async function GET(request: NextRequest) {
       title = `${periodLabelUZ(period)} hisobot — ${session.fullName}`;
     }
 
-    const records = await getAttendanceInRange({ from, to, groupId, studentId });
+    const [records, analytics] = await Promise.all([
+      getAttendanceInRange({ from, to, groupId, studentId }),
+      // The same three headline figures shown at the top of the Hisobot page
+      // — computed with the identical from/to/groupId/studentId scope — so
+      // the exported file's summary block always matches what was on screen
+      // when the teacher clicked export.
+      getReportAnalytics({ from, to, groupId, studentId }),
+    ]);
     const rows = buildAttendanceReportRows(records as never);
     const subtitle = `${formatDate(from)} — ${formatDate(to)}`;
 
@@ -69,10 +77,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const summary: ReportSummaryItem[] = [
+      { label: "Umumiy tushadigan summa", value: formatUZS(analytics.totalGrossRevenue) },
+      { label: "Oylik kutilayotgan summa", value: formatUZS(analytics.totalExpectedThisMonth) },
+      { label: "Olingan ulush (shu oy)", value: formatUZS(analytics.totalEarnedMonthToDate) },
+      { label: "Davr ichida ulushim", value: formatUZS(analytics.totalEarnedInRange) },
+    ];
+
     const filenameDate = `${from.toISOString().slice(0, 10)}_${to.toISOString().slice(0, 10)}`;
 
     if (format === "xlsx") {
-      const buffer = await buildAttendanceExcelReport(rows, fields, `${title} (${subtitle})`);
+      const buffer = await buildAttendanceExcelReport(rows, fields, `${title} (${subtitle})`, summary);
       return new NextResponse(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -81,7 +96,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const buffer = await buildAttendancePdfReport(rows, fields, title, subtitle);
+    const buffer = await buildAttendancePdfReport(rows, fields, title, subtitle, summary);
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/pdf",

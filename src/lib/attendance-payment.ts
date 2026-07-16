@@ -219,6 +219,46 @@ export function computeLessonValue(monthlyPrice: number, lessonsPerMonth: number
   return Math.round(monthlyPrice / lessonsPerMonth);
 }
 
+/**
+ * Counts how many concrete lesson occurrences a group's recurring weekly
+ * schedule produces within [rangeStart, rangeEnd] (inclusive), clamped to
+ * not start before the group's own startDate. This mirrors, day-for-day and
+ * slot-for-slot, the exact same walk that
+ * generateLessonSessionsForGroup() (src/app/actions/schedule.ts) uses to
+ * materialize real LessonSession rows — so the count this returns is always
+ * consistent with what actually shows up in the attendance journal, whether
+ * or not those rows have been generated yet for the target range.
+ *
+ * This is the real, schedule-driven lesson count behind "oylik kutilayotgan
+ * summa" (this month's expected teacher earning ceiling): a group meeting
+ * 3x/week has a genuinely different ceiling than one meeting 2x/week, even
+ * at the identical per-lesson rate — a flat "12 lessons" assumption would be
+ * wrong for either of them.
+ */
+export function countScheduledLessons(
+  scheduleSlots: { dayOfWeek: number }[],
+  groupStartDate: Date,
+  rangeStart: Date,
+  rangeEnd: Date,
+): number {
+  if (scheduleSlots.length === 0) return 0;
+
+  const start = new Date(Math.max(new Date(groupStartDate).getTime(), new Date(rangeStart).getTime()));
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(rangeEnd);
+  end.setHours(0, 0, 0, 0);
+  if (start > end) return 0;
+
+  let count = 0;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const day = d.getDay();
+    for (const slot of scheduleSlots) {
+      if (slot.dayOfWeek === day) count += 1;
+    }
+  }
+  return count;
+}
+
 export interface EarningsSummary {
   totalLessons: number;
   attendedLessons: number;

@@ -23,7 +23,8 @@ type UsernameStatus = "idle" | "checking" | "available" | "taken";
 
 interface ProfileData {
   username: string;
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string | null;
   phone: string | null;
   defaultLessonRate: unknown;
@@ -36,7 +37,8 @@ export function ProfileForm({ profile }: { profile: ProfileData }) {
     resolver: zodResolver(profileUpdateSchema),
     defaultValues: {
       username: profile.username,
-      fullName: profile.fullName,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
       email: profile.email ?? "",
       phone: profile.phone ?? "",
       defaultLessonRate: Number(profile.defaultLessonRate),
@@ -130,9 +132,15 @@ export function ProfileForm({ profile }: { profile: ProfileData }) {
                 <p className="text-xs text-muted-foreground">Tizimga shu login bilan kirasiz.</p>
               )}
             </div>
-            <div className="space-y-2">
-              <Label>Ism-familiya</Label>
-              <Input {...profileForm.register("fullName")} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Ism</Label>
+                <Input {...profileForm.register("firstName")} />
+              </div>
+              <div className="space-y-2">
+                <Label>Familiya</Label>
+                <Input {...profileForm.register("lastName")} />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">

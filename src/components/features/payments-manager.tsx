@@ -21,7 +21,7 @@ interface StudentOption {
   id: string;
   firstName: string;
   lastName: string;
-  course: { monthlyPrice: unknown };
+  group: { monthlyPrice: unknown };
 }
 
 interface PaymentRow {
@@ -50,7 +50,7 @@ export function PaymentsManager({ initialPayments, students }: { initialPayments
   function onStudentChange(id: string) {
     form.setValue("studentId", id);
     const student = students.find((s) => s.id === id);
-    if (student) form.setValue("amountDue", Number(student.course.monthlyPrice));
+    if (student) form.setValue("amountDue", Number(student.group.monthlyPrice));
   }
 
   async function onRecord(data: RecordPaymentInput) {

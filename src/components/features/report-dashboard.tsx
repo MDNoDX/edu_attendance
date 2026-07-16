@@ -1,15 +1,31 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { FileText, FileSpreadsheet, Loader2, Users, Wallet, TrendingDown, Check } from "lucide-react";
+import {
+  FileText,
+  FileSpreadsheet,
+  Loader2,
+  Users,
+  Wallet,
+  TrendingDown,
+  Check,
+  EyeOff,
+  Eye,
+  ChevronDown,
+  ChevronRight,
+  Target,
+  TrendingUp,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/shared/stat-card";
 import { FadeInStagger, FadeInItem } from "@/components/shared/motion";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getReportAnalytics, type ReportAnalytics } from "@/app/actions/reports";
 import { ATTENDANCE_REPORT_FIELDS } from "@/lib/reports/fields";
@@ -71,6 +87,16 @@ export function ReportDashboard({
   const [selectedFields, setSelectedFields] = useState<string[]>(
     ATTENDANCE_REPORT_FIELDS.filter((f) => f.defaultSelected).map((f) => f.key),
   );
+  // "Narxlarni yashirish" — lets the teacher black out every money figure on
+  // screen before sharing their own screen with a student/parent, without
+  // having to leave the report page. Purely a display toggle: exports always
+  // include real figures regardless of this switch.
+  const [pricesHidden, setPricesHidden] = useState(false);
+  const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+
+  function money(n: number) {
+    return pricesHidden ? "•••••" : formatUZS(n);
+  }
 
   const scopeOptions = useMemo(
     () => [
@@ -135,8 +161,26 @@ export function ReportDashboard({
     }
   }
 
+  const studentsByGroup = useMemo(() => {
+    const map = new Map<string, ReportAnalytics["students"]>();
+    for (const s of analytics.students) {
+      const list = map.get(s.groupId) ?? [];
+      list.push(s);
+      map.set(s.groupId, list);
+    }
+    return map;
+  }, [analytics.students]);
+
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-end gap-2 rounded-lg border border-border bg-card px-3 py-2">
+        {pricesHidden ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
+        <Label htmlFor="hide-prices" className="cursor-pointer text-sm">
+          Narxlarni yashirish
+        </Label>
+        <Switch id="hide-prices" checked={pricesHidden} onCheckedChange={setPricesHidden} />
+      </div>
+
       <Card>
         <CardContent className="grid gap-4 p-5 sm:grid-cols-3">
           <div className="space-y-2">
@@ -165,6 +209,46 @@ export function ReportDashboard({
         </CardContent>
       </Card>
 
+      {/* The three headline figures are deliberately always visible and never
+          tied to the ad-hoc from/to filter above (that filter only affects
+          "Davr ichida ulushim" further down, plus the export) — these three
+          answer three fixed, always-relevant questions: what the students
+          owe in total, what the teacher's own ceiling is THIS month given
+          each group's real weekly schedule, and what's actually been earned
+          so far this month. See the doc comment on getReportAnalytics(). */}
+      <FadeInStagger
+        key={`${String(analytics.from)}-${String(analytics.to)}-${scope}`}
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+      >
+        <FadeInItem>
+          <StatCard
+            label="Umumiy tushadigan summa"
+            value={money(analytics.totalGrossRevenue)}
+            icon={Wallet}
+            tone="info"
+            hint="Studentlarning oylik to'lovlari yig'indisi"
+          />
+        </FadeInItem>
+        <FadeInItem>
+          <StatCard
+            label="Oylik kutilayotgan summa"
+            value={money(analytics.totalExpectedThisMonth)}
+            icon={Target}
+            tone="violet"
+            hint="Shu oy — hamma student to'liq kelsa, ulushingiz"
+          />
+        </FadeInItem>
+        <FadeInItem>
+          <StatCard
+            label="Amalda olingan ulush (shu oy)"
+            value={money(analytics.totalEarnedMonthToDate)}
+            icon={TrendingUp}
+            tone="success"
+            hint="Oy boshidan bugungacha, real davomat asosida"
+          />
+        </FadeInItem>
+      </FadeInStagger>
+
       <Card className="border-primary/30 bg-primary/[0.03]">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Excel yoki PDF sifatida yuklab olish</CardTitle>
@@ -192,37 +276,19 @@ export function ReportDashboard({
             </Button>
           </div>
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Check className="h-3.5 w-3.5" /> Yuklab olingan fayl aynan yuqoridagi filtr va sanalarga mos keladi.
+            <Check className="h-3.5 w-3.5" /> Yuklab olingan fayl boshida yuqoridagi uchta summa va tanlangan davr ustunlari bilan chiqadi.
           </p>
         </CardContent>
       </Card>
 
-      <FadeInStagger
-        key={`${String(analytics.from)}-${String(analytics.to)}-${scope}`}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-      >
-        <FadeInItem>
-          <StatCard label="Studentlar" value={analytics.totalStudents} icon={Users} tone="info" />
-        </FadeInItem>
-        <FadeInItem>
-          <StatCard label="Oylik kutilayotgan summa" value={formatUZS(analytics.totalMonthlyRevenue)} icon={Wallet} tone="violet" />
-        </FadeInItem>
-        <FadeInItem>
-          <StatCard label="Davr ichida ulushim" value={formatUZS(analytics.totalEarnedInRange)} icon={Wallet} tone="success" />
-        </FadeInItem>
-        <FadeInItem>
-          <StatCard label="Yo'qotilgan (uzr)" value={formatUZS(analytics.totalLostToCutoff)} icon={TrendingDown} tone="destructive" />
-        </FadeInItem>
-      </FadeInStagger>
-
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">
-            {formatDate(analytics.from)} — {formatDate(analytics.to)} davomat taqsimoti
+            {formatDate(analytics.from)} — {formatDate(analytics.to)} davri
             {isPending && <Loader2 className="ml-2 inline h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-6">
           <div className="rounded-lg bg-success/10 p-3 text-center">
             <p className="text-2xl font-semibold text-success">{analytics.present}</p>
             <p className="text-xs text-muted-foreground">Keldi</p>
@@ -239,74 +305,151 @@ export function ReportDashboard({
             <p className="text-2xl font-semibold text-destructive">{analytics.unexcusedAbsent}</p>
             <p className="text-xs text-muted-foreground">Sababsiz kelmadi</p>
           </div>
+          <div className="rounded-lg bg-success/10 p-3 text-center">
+            <p className="text-lg font-semibold text-success">{money(analytics.totalEarnedInRange)}</p>
+            <p className="text-xs text-muted-foreground">Davr ichida ulushim</p>
+          </div>
+          <div className="rounded-lg bg-destructive/10 p-3 text-center">
+            <p className="text-lg font-semibold text-destructive">{money(analytics.totalLostToCutoff)}</p>
+            <p className="text-xs text-muted-foreground">Yo&apos;qotilgan (uzr)</p>
+          </div>
         </CardContent>
       </Card>
 
-      {analytics.groups.length > 1 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Guruhlar bo&apos;yicha</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Guruh</TableHead>
-                  <TableHead>Studentlar</TableHead>
-                  <TableHead>Oylik summa</TableHead>
-                  <TableHead>Ulushim</TableHead>
-                  <TableHead>Yo&apos;qotilgan</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {analytics.groups.map((g) => (
-                  <TableRow key={g.id}>
-                    <TableCell className="font-medium">{g.name}</TableCell>
-                    <TableCell>{g.studentCount}</TableCell>
-                    <TableCell>{formatUZS(g.monthlyRevenue)}</TableCell>
-                    <TableCell className="text-success">{formatUZS(g.earned)}</TableCell>
-                    <TableCell className="text-destructive">{formatUZS(g.lostToCutoff)}</TableCell>
+      <Tabs defaultValue="groups">
+        <TabsList>
+          <TabsTrigger value="groups">Guruhlar bo&apos;yicha</TabsTrigger>
+          <TabsTrigger value="students">Studentlar bo&apos;yicha</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="groups">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Guruhlar bo&apos;yicha</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead />
+                    <TableHead>Guruh</TableHead>
+                    <TableHead>Studentlar</TableHead>
+                    <TableHead>Umumiy summa</TableHead>
+                    <TableHead>Oylik kutilayotgan</TableHead>
+                    <TableHead>Olingan (shu oy)</TableHead>
+                    <TableHead>Davr ichida</TableHead>
+                    <TableHead>Yo&apos;qotilgan</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+                </TableHeader>
+                <TableBody>
+                  {analytics.groups.map((g) => (
+                    <Fragment key={g.id}>
+                      <TableRow
+                        className="cursor-pointer hover:bg-muted/40"
+                        onClick={() => setExpandedGroupId((cur) => (cur === g.id ? null : g.id))}
+                      >
+                        <TableCell className="w-8">
+                          {expandedGroupId === g.id ? (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium">{g.name}</TableCell>
+                        <TableCell>{g.studentCount}</TableCell>
+                        <TableCell>{money(g.grossRevenue)}</TableCell>
+                        <TableCell className="text-violet-600 dark:text-violet-400">{money(g.expectedThisMonth)}</TableCell>
+                        <TableCell className="text-success">{money(g.earnedMonthToDate)}</TableCell>
+                        <TableCell className="text-success">{money(g.earnedInRange)}</TableCell>
+                        <TableCell className="text-destructive">{money(g.lostToCutoff)}</TableCell>
+                      </TableRow>
+                      {expandedGroupId === g.id && (
+                        <TableRow className="bg-muted/20 hover:bg-muted/20">
+                          <TableCell colSpan={8} className="p-0">
+                            <div className="space-y-2 p-4">
+                              <p className="text-xs text-muted-foreground">
+                                Nega bunday: har bir student uchun ulushingiz = shu guruhning bitta darsdan
+                                olinadigan ulushi ({money(Number(studentsByGroup.get(g.id)?.[0]?.lessonRate ?? 0))}) ×
+                                shu oydagi haqiqiy dars kunlari soni ({studentsByGroup.get(g.id)?.[0]?.scheduledLessonsThisMonth ?? 0} ta).
+                              </p>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead>Student</TableHead>
+                                    <TableHead>Oylik to&apos;lovi</TableHead>
+                                    <TableHead>Dars ulushi</TableHead>
+                                    <TableHead>Shu oy dars kuni</TableHead>
+                                    <TableHead>Oylik kutilayotgan</TableHead>
+                                    <TableHead>Olingan (shu oy)</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(studentsByGroup.get(g.id) ?? []).map((s) => (
+                                    <TableRow key={s.id}>
+                                      <TableCell>{s.fullName}</TableCell>
+                                      <TableCell>{money(s.monthlyPrice)}</TableCell>
+                                      <TableCell>{money(s.lessonRate)}</TableCell>
+                                      <TableCell>{s.scheduledLessonsThisMonth}</TableCell>
+                                      <TableCell className="text-violet-600 dark:text-violet-400">
+                                        {money(s.expectedThisMonth)}
+                                      </TableCell>
+                                      <TableCell className="text-success">{money(s.earnedMonthToDate)}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Studentlar bo&apos;yicha</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Student</TableHead>
-                <TableHead>Guruh</TableHead>
-                <TableHead>Keldi</TableHead>
-                <TableHead>Kechikdi</TableHead>
-                <TableHead>Sababli</TableHead>
-                <TableHead>Sababsiz</TableHead>
-                <TableHead>Ulushim</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {analytics.students.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell className="font-medium">{s.fullName}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{s.groupName}</TableCell>
-                  <TableCell>{s.present}</TableCell>
-                  <TableCell>{s.late}</TableCell>
-                  <TableCell>{s.excusedAbsent}</TableCell>
-                  <TableCell>{s.unexcusedAbsent}</TableCell>
-                  <TableCell className="text-success">{formatUZS(s.earned)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        <TabsContent value="students">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Studentlar bo&apos;yicha</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead>Guruh</TableHead>
+                    <TableHead>Keldi</TableHead>
+                    <TableHead>Kechikdi</TableHead>
+                    <TableHead>Sababli</TableHead>
+                    <TableHead>Sababsiz</TableHead>
+                    <TableHead>Oylik kutilayotgan</TableHead>
+                    <TableHead>Olingan (shu oy)</TableHead>
+                    <TableHead>Davr ichida</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {analytics.students.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.fullName}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{s.groupName}</TableCell>
+                      <TableCell>{s.present}</TableCell>
+                      <TableCell>{s.late}</TableCell>
+                      <TableCell>{s.excusedAbsent}</TableCell>
+                      <TableCell>{s.unexcusedAbsent}</TableCell>
+                      <TableCell className="text-violet-600 dark:text-violet-400">{money(s.expectedThisMonth)}</TableCell>
+                      <TableCell className="text-success">{money(s.earnedMonthToDate)}</TableCell>
+                      <TableCell className="text-success">{money(s.earnedInRange)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

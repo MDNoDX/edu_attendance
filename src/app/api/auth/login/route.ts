@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyPassword, createSessionCookie } from "@/lib/auth";
+import { verifyPassword, createSessionCookieAndRecord } from "@/lib/auth";
 import { loginSchema } from "@/lib/validations";
 import { isRateLimited, recordAttempt, getClientIp } from "@/lib/rate-limit";
 
@@ -66,12 +66,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Login yoki parol noto'g'ri." }, { status: 401 });
   }
 
-  await createSessionCookie({
-    sub: user.id,
-    username: user.username,
-    fullName: user.fullName,
-    role: user.role,
-  });
+  await createSessionCookieAndRecord(
+    {
+      sub: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      role: user.role,
+    },
+    { userAgent: request.headers.get("user-agent"), ip },
+  );
 
   return NextResponse.json({
     ok: true,

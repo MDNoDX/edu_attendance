@@ -26,10 +26,10 @@ import type { Prisma } from "@prisma/client";
 async function getLessonRateForGroup(groupId: string, userId: string) {
   const group = await prisma.group.findFirstOrThrow({
     where: { id: groupId, userId },
-    include: { user: true, course: true },
+    include: { user: true },
   });
   const rate = Number(group.teacherLessonRateOverride ?? group.user.defaultLessonRate);
-  const lessonValue = computeLessonValue(Number(group.course.monthlyPrice), group.course.lessonsPerMonth);
+  const lessonValue = computeLessonValue(Number(group.monthlyPrice), group.lessonsPerMonth);
   return { rate, lessonValue, group };
 }
 
@@ -104,7 +104,7 @@ export async function getLessonRoster(lessonSessionId: string) {
   const lessonSession = await prisma.lessonSession.findFirst({
     where: { id: lessonSessionId, userId: session.sub },
     include: {
-      group: { include: { students: { where: { deletedAt: null } }, course: true } },
+      group: { include: { students: { where: { deletedAt: null } } } },
       attendances: true,
     },
   });
@@ -132,7 +132,6 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
   const group = await prisma.group.findFirst({
     where: { id: groupId, userId: session.sub },
     include: {
-      course: true,
       // The journal grid (attendance-journal.tsx) only ever renders
       // id/firstName/lastName for each student in the roster — never their
       // photo, phone, address, etc. This used to fetch every field
@@ -404,7 +403,7 @@ export async function getAttendanceInRange(filters: AttendanceRangeFilters) {
     where,
     include: {
       student: true,
-      lessonSession: { include: { group: { include: { course: true } } } },
+      lessonSession: { include: { group: true } },
     },
     orderBy: { lessonSession: { date: "asc" } },
   });
