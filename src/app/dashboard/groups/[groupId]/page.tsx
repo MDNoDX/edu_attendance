@@ -16,8 +16,19 @@ function startOfCurrentMonth() {
   return new Date(d.getFullYear(), d.getMonth(), 1);
 }
 
-export default async function GroupDetailPage({ params }: { params: Promise<{ groupId: string }> }) {
+export default async function GroupDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ groupId: string }>;
+  // `?tab=report` lets the Hisobot page's "Yo'qotilgan" drill-down deep-link
+  // straight into this exact group's own report tab instead of always
+  // landing on the default Davomat tab.
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const { groupId } = await params;
+  const { tab } = await searchParams;
+  const initialTab = tab === "report" || tab === "students" ? tab : "attendance";
   const now = new Date();
 
   let journal;
@@ -70,7 +81,7 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ gr
       {/* Each concern gets its own tab instead of being stacked one long page
           — a teacher checking today's attendance shouldn't have to scroll
           past the full student roster and a report card to get there. */}
-      <Tabs defaultValue="attendance">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="attendance">Davomat</TabsTrigger>
           <TabsTrigger value="students">Studentlar {groupStudentTotal > 0 && `(${groupStudentTotal})`}</TabsTrigger>

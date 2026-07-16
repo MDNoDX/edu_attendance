@@ -28,6 +28,8 @@ export interface StudentBreakdown {
   /** Actual teacher earning within the report's own (arbitrary) from/to filter — backs the detail table and the export. */
   earnedInRange: number;
   lostToCutoff: number;
+  /** Every excused-absence note left in-range for this student, newest first — lets the "Sababli kelmadi" drill-down show WHY, not just how many. */
+  excusedNotes: { date: string; note: string }[];
   /** How many real lesson occurrences this student's group's weekly schedule produces in the current calendar month. */
   scheduledLessonsThisMonth: number;
   /** lessonRate * scheduledLessonsThisMonth — the ceiling the teacher could earn from this student THIS month if every lesson were attended. Never based on the student's tuition price. */
@@ -118,6 +120,11 @@ export async function getReportAnalytics(filters: ReportFilters): Promise<Report
       group: { include: { scheduleSlots: true } },
       attendances: {
         where: { lessonSession: { date: { gte: filters.from, lte: filters.to } } },
+        // Only the session date is needed alongside each attendance record —
+        // this backs the "Sababli kelmadi" note drill-down, which needs to
+        // say WHEN a given excuse note was left, not just count how many.
+        include: { lessonSession: { select: { date: true } } },
+        orderBy: { lessonSession: { date: "desc" } },
       },
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -161,6 +168,7 @@ export async function getReportAnalytics(filters: ReportFilters): Promise<Report
     let unexcusedAbsent = 0;
     let earnedInRange = 0;
     let lostToCutoff = 0;
+    const excusedNotes: { date: string; note: string }[] = [];
 
     // The teacher's own per-lesson rate for THIS student's group — needed
     // inside the loop below because "Yo'qotilgan" must be the teacher's own
@@ -175,8 +183,10 @@ export async function getReportAnalytics(filters: ReportFilters): Promise<Report
     for (const a of s.attendances) {
       if (a.status === "PRESENT") present += 1;
       else if (a.status === "LATE") late += 1;
-      else if (a.status === "EXCUSED_ABSENT") excusedAbsent += 1;
-      else if (a.status === "UNEXCUSED_ABSENT") unexcusedAbsent += 1;
+      else if (a.status === "EXCUSED_ABSENT") {
+        excusedAbsent += 1;
+        if (a.note) excusedNotes.push({ date: a.lessonSession.date.toISOString(), note: a.note });
+      } else if (a.status === "UNEXCUSED_ABSENT") unexcusedAbsent += 1;
 
       earnedInRange += Number(a.teacherEarningAmount);
       if (
@@ -209,6 +219,7 @@ export async function getReportAnalytics(filters: ReportFilters): Promise<Report
       unexcusedAbsent,
       earnedInRange,
       lostToCutoff,
+      excusedNotes,
       scheduledLessonsThisMonth,
       expectedThisMonth,
       earnedMonthToDate,

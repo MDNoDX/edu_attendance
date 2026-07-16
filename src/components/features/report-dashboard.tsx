@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   FileText,
@@ -14,6 +15,8 @@ import {
   ChevronRight,
   Target,
   TrendingUp,
+  ArrowUpRight,
+  MessageSquareText,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/shared/stat-card";
@@ -107,9 +110,10 @@ export function ReportDashboard({
   // analytics.students, so a single generic dialog can explain any of them
   // instead of building a bespoke drill-down for each.
   const [detailDialog, setDetailDialog] = useState<{
+    kind: DetailKind;
     title: string;
     description: string;
-    rows: { label: string; sub: string; value: string }[];
+    rows: { label: string; sub: string; value: string; groupId: string; notes?: string[] }[];
     total: string;
   } | null>(null);
 
@@ -182,8 +186,11 @@ export function ReportDashboard({
         isMoney: true,
       },
       lost: {
-        title: "Yo'qotilgan (uzr) — studentlar bo'yicha",
-        description: "Ketma-ket 3+ kelmagan holatlar sababli to'lanmagan summa.",
+        // No longer "(uzr)" — the underlying figure covers BOTH excused and
+        // unexcused absences past the consecutive-miss cutoff, so labeling
+        // it as excused-only was misleading about what's actually included.
+        title: "Yo'qotilgan — studentlar bo'yicha",
+        description: "Ketma-ket 3+ kelmagan holatlar sababli to'lanmagan summa. Har bir student — aynan o'sha guruhga o'tish uchun bosing.",
         pick: (s) => s.lostToCutoff,
         isMoney: true,
       },
@@ -191,13 +198,29 @@ export function ReportDashboard({
 
     const cfg = configs[kind];
     const rows = analytics.students
-      .map((s) => ({ label: s.fullName, sub: s.groupName, raw: cfg.pick(s) }))
+      .map((s) => ({
+        label: s.fullName,
+        sub: s.groupName,
+        groupId: s.groupId,
+        raw: cfg.pick(s),
+        // Only relevant for "Sababli kelmadi" — the whole point of this kind's
+        // drill-down is surfacing WHY, not just how many, so each student's
+        // actual excuse notes ride along with their row.
+        notes: kind === "excused" ? s.excusedNotes.map((n) => `${formatDate(n.date)}: ${n.note}`) : undefined,
+      }))
       .filter((r) => r.raw !== 0)
       .sort((a, b) => b.raw - a.raw)
-      .map((r) => ({ label: r.label, sub: r.sub, value: cfg.isMoney ? money(r.raw) : String(r.raw) }));
+      .map((r) => ({
+        label: r.label,
+        sub: r.sub,
+        groupId: r.groupId,
+        notes: r.notes,
+        value: cfg.isMoney ? money(r.raw) : String(r.raw),
+      }));
     const totalRaw = analytics.students.reduce((sum, s) => sum + cfg.pick(s), 0);
 
     setDetailDialog({
+      kind,
       title: cfg.title,
       description: cfg.description,
       rows,
@@ -447,7 +470,7 @@ export function ReportDashboard({
             className="rounded-lg bg-destructive/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
           >
             <p className="text-lg font-semibold text-destructive">{money(analytics.totalLostToCutoff)}</p>
-            <p className="text-xs text-muted-foreground">Yo&apos;qotilgan (uzr)</p>
+            <p className="text-xs text-muted-foreground">Yo&apos;qotilgan</p>
           </button>
         </CardContent>
       </Card>
@@ -594,19 +617,61 @@ export function ReportDashboard({
           </DialogHeader>
           <p className="text-xs text-muted-foreground">{detailDialog?.description}</p>
           <div className="max-h-80 space-y-1 overflow-y-auto">
-            {detailDialog?.rows.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">Bu davrda ma&apos;lumot yo&apos;q.</p>
-            ) : (
-              detailDialog?.rows.map((r, i) => (
-                <div key={i} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm odd:bg-muted/30">
-                  <div>
-                    <p className="font-medium">{r.label}</p>
-                    <p className="text-xs text-muted-foreground">{r.sub}</p>
+            {(() => {
+              // Local alias so TS can narrow `detailDialog` to non-null once
+              // and keep that narrowing inside the nested .map() callback
+              // below (optional-chaining on the outer expression alone
+              // doesn't survive into a nested closure).
+              const d = detailDialog;
+              if (!d) return null;
+              if (d.rows.length === 0) {
+                return <p className="py-4 text-center text-sm text-muted-foreground">Bu davrda ma&apos;lumot yo&apos;q.</p>;
+              }
+              return d.rows.map((r, i) => {
+                const hasNotes = d.kind === "excused" && r.notes && r.notes.length > 0;
+                const isLost = d.kind === "lost";
+                return (
+                  <div key={i} className="rounded-lg px-2 py-1.5 odd:bg-muted/30">
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">{r.label}</p>
+                        <p className="truncate text-xs text-muted-foreground">{r.sub}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <p className="font-medium">{r.value}</p>
+                        {isLost && (
+                          // "aynan osha vaziyatga bog'langan panelga olib
+                          // boradigan" — a direct link to THIS student's own
+                          // group + report tab, not just a static number.
+                          <Link
+                            href={`/dashboard/groups/${r.groupId}?tab=report`}
+                            className="flex items-center gap-0.5 rounded-md border border-border px-1.5 py-0.5 text-xs text-muted-foreground hover:border-primary hover:text-primary"
+                          >
+                            Guruhga <ArrowUpRight className="h-3 w-3" />
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                    {/* "Sababli kelmadi" notes surfaced right here, larger and
+                        on their own line, instead of being buried — this is
+                        the whole reason a teacher opens this drill-down. */}
+                    {hasNotes && (
+                      <div className="mt-1.5 space-y-1 border-t border-border/60 pt-1.5">
+                        {r.notes!.map((note, ni) => (
+                          <p key={ni} className="flex items-start gap-1.5 text-sm font-medium text-foreground">
+                            <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                            {note}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {d.kind === "excused" && !hasNotes && (
+                      <p className="mt-1 text-xs italic text-muted-foreground/70">Izoh qoldirilmagan</p>
+                    )}
                   </div>
-                  <p className="shrink-0 font-medium">{r.value}</p>
-                </div>
-              ))
-            )}
+                );
+              });
+            })()}
           </div>
           <div className="flex items-center justify-between border-t border-border pt-3 text-sm font-semibold">
             <span>Jami</span>
