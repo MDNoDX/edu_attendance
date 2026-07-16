@@ -13,7 +13,12 @@ export async function listGroups() {
     where: { userId: session.sub, deletedAt: null },
     include: {
       course: true,
-      students: { where: { deletedAt: null } },
+      // The groups list only ever shows a student COUNT (see
+      // groups-manager.tsx), never individual student fields — fetching
+      // every field (including each student's full base64 photoUrl) of
+      // every student in every group just to display a number was pure
+      // waste. `_count` gets the number in the same query with none of that.
+      _count: { select: { students: { where: { deletedAt: null } } } },
       scheduleSlots: true,
     },
     orderBy: { createdAt: "desc" },

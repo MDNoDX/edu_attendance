@@ -16,7 +16,7 @@ interface SessionRow {
   date: string | Date;
   startTime: string;
   endTime: string;
-  group: { name: string; roomName: string; course: { name: string }; students: unknown[] };
+  group: { name: string; roomName: string; course: { name: string }; _count: { students: number } };
 }
 
 function rangeFor(period: Period, ref: Date) {
@@ -111,7 +111,7 @@ export function ScheduleView({ initialSessions }: { initialSessions: SessionRow[
                 <TableCell className="font-medium">{s.group.name}</TableCell>
                 <TableCell>{s.group.course.name}</TableCell>
                 <TableCell>{s.group.roomName}</TableCell>
-                <TableCell>{s.group.students.length}</TableCell>
+                <TableCell>{s.group._count.students}</TableCell>
               </TableRow>
             ))}
           </TableBody>

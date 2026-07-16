@@ -26,10 +26,49 @@ const nextConfig = {
     // `webpack()` override below.
     serverComponentsExternalPackages: ["pdfkit", "fontkit", "restructure"],
   },
-  images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "**" },
-    ],
+  // No `images.remotePatterns` here on purpose: the app never loads a
+  // remote image through next/image (the only <Image> usage is the local
+  // /public/logo.svg — student/profile photos are inline base64 data URLs
+  // rendered as plain <img>, not next/image). A wildcard `hostname: "**"`
+  // was previously set here despite that, which would have let next/image's
+  // server-side fetch/optimization endpoint be pointed at ANY external (or
+  // internal-network) URL — an SSRF/proxy-abuse surface with no upside since
+  // nothing actually uses it. If a real remote image host is ever needed,
+  // add its exact hostname here rather than reintroducing a wildcard.
+  async headers() {
+    const csp = [
+      "default-src 'self'",
+      // 'unsafe-inline' is required for Next.js's own hydration bootstrap
+      // and next-themes' anti-flash inline script; a nonce-based CSP would
+      // remove the need for this but requires per-request middleware
+      // plumbing — a reasonable future hardening step, not done here.
+      "script-src 'self' 'unsafe-inline'",
+      // Radix UI (Popover/Dialog/Tooltip/Dropdown) positions itself via
+      // inline `style` attributes set directly by JS — style-src needs
+      // 'unsafe-inline' too, or every dropdown/dialog silently breaks.
+      "style-src 'self' 'unsafe-inline'",
+      // Student/profile photos are stored as base64 `data:` URLs.
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "frame-ancestors 'none'",
+    ].join("; ");
+
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "Content-Security-Policy", value: csp },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+        ],
+      },
+    ];
   },
   // Force pdfkit to stay a real, unbundled `require("pdfkit")` in the
   // server output instead of being inlined into route.js. When webpack

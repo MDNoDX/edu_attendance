@@ -45,25 +45,25 @@ export async function generateLessonSessionsForGroup(groupId: string, weeks: num
     }
   }
 
-  let created = 0;
-  for (const { date, startTime, endTime } of datesToCreate) {
-    try {
-      await prisma.lessonSession.create({
-        data: {
-          groupId: group.id,
-          userId: group.userId,
-          date,
-          startTime,
-          endTime,
-        },
-      });
-      created += 1;
-    } catch {
-      // Unique constraint hit (already generated for this date) — skip silently.
-    }
-  }
+  if (datesToCreate.length === 0) return { created: 0 };
 
-  return { created };
+  // One round-trip instead of one `create` per date (this used to be up to
+  // ~50-60 sequential awaited inserts per call, most of which just hit the
+  // (groupId, date) unique constraint and got silently caught — wasted
+  // round-trips on every journal load for an ACTIVE group). `skipDuplicates`
+  // makes this just as idempotent as the old try/catch-per-date loop.
+  const result = await prisma.lessonSession.createMany({
+    data: datesToCreate.map(({ date, startTime, endTime }) => ({
+      groupId: group.id,
+      userId: group.userId,
+      date,
+      startTime,
+      endTime,
+    })),
+    skipDuplicates: true,
+  });
+
+  return { created: result.count };
 }
 
 /**
@@ -128,7 +128,10 @@ export async function getScheduleSessions(filters: ScheduleFilters) {
   const sessions = await prisma.lessonSession.findMany({
     where,
     include: {
-      group: { include: { course: true, students: { where: { deletedAt: null } } } },
+      // schedule-view.tsx only ever shows a student COUNT for the group,
+      // never individual students — `_count` avoids pulling every student's
+      // full record (photoUrl included) for every session on the calendar.
+      group: { include: { course: true, _count: { select: { students: { where: { deletedAt: null } } } } } },
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });

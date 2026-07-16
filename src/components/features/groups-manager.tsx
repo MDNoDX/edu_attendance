@@ -36,7 +36,7 @@ interface GroupRow {
   startDate: string | Date;
   teacherLessonRateOverride: unknown;
   course: { id: string; name: string };
-  students: unknown[];
+  _count: { students: number };
   scheduleSlots: { dayOfWeek: number; startTime: string; endTime: string }[];
 }
 
@@ -276,7 +276,7 @@ export function GroupsManager({
                 <CardContent className="space-y-2 text-sm">
                   <p>Kurs: <strong>{group.course.name}</strong></p>
                   <p>Xona: <strong>{group.roomName}</strong></p>
-                  <p>Studentlar: <strong>{group.students.length}</strong> / {group.capacity}</p>
+                  <p>Studentlar: <strong>{group._count.students}</strong> / {group.capacity}</p>
                   <p>
                     Sizning ulushingiz:{" "}
                     <strong className="text-success">

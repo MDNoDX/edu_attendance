@@ -347,6 +347,24 @@ model Payment {
   @@map("payments")
 }
 
+// ----------------------------------------------------------------------------
+// RATE LIMITING — sliding-window attempt tracker backed by this same
+// Postgres database instead of a separate Redis/Upstash service. Fine at
+// this app's traffic scale; see src/lib/rate-limit.ts. Used for login
+// brute-force protection, signup abuse throttling, and username-check
+// enumeration throttling.
+// ----------------------------------------------------------------------------
+
+model RateLimitAttempt {
+  id        String   @id @default(cuid())
+  /// e.g. "login:user:someusername", "login:ip:1.2.3.4", "signup:ip:1.2.3.4".
+  key       String
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+  @@map("rate_limit_attempts")
+}
+
 model PaymentTransaction {
   id            String        @id @default(cuid())
   paymentId     String

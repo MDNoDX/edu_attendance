@@ -1,7 +1,7 @@
-// Removed: Ustoz Akademiyasi is now a single-role (teacher self-service) app.
-// There is no Admin/Super Admin concept anymore — every teacher manages their
-// own courses, groups, students, attendance and payments directly.
-// This file is kept as an empty placeholder only because the sandbox this
-// project was generated in cannot delete files once written; it is safe to
-// delete this file yourself (`rm src/app/actions/admins.ts`).
+// Removed: this was a pre-pivot stub for a multi-admin management action
+// file from before the single-tenant Teacher + Super-Admin architecture.
+// Nothing imports from it. Safe to delete this file (and the stray
+// `admins.ts.deleted` next to it, left over from a sandbox file-deletion
+// attempt that couldn't fully remove it) — `rm src/app/actions/admins.ts
+// src/app/actions/admins.ts.deleted`.
 export {};

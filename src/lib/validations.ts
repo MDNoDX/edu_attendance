@@ -19,7 +19,7 @@ export const usernameSchema = z
 
 export const registerSchema = z.object({
   username: usernameSchema,
-  password: z.string().min(6, "Parol kamida 6 ta belgi"),
+  password: z.string().min(8, "Parol kamida 8 ta belgi"),
   fullName: z.string().min(2, "Ism-familiya kiritilishi shart"),
   email: z.string().email("Email noto'g'ri").optional().or(z.literal("")),
   phone: z.string().optional(),
@@ -41,8 +41,8 @@ export const profileUpdateSchema = z.object({
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Joriy parolni kiriting"),
-    newPassword: z.string().min(6, "Yangi parol kamida 6 ta belgi"),
-    confirmPassword: z.string().min(6),
+    newPassword: z.string().min(8, "Yangi parol kamida 8 ta belgi"),
+    confirmPassword: z.string().min(8),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Parollar mos kelmadi",
@@ -183,7 +183,7 @@ export const adminUpdateTeacherSchema = z.object({
 });
 
 export const adminResetPasswordSchema = z.object({
-  newPassword: z.string().min(6, "Yangi parol kamida 6 ta belgi"),
+  newPassword: z.string().min(8, "Yangi parol kamida 8 ta belgi"),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

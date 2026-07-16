@@ -14,15 +14,40 @@ import { serializeDecimals } from "@/lib/serialize";
 import { generateLessonSessionsForGroup } from "@/app/actions/schedule";
 import type { Prisma } from "@prisma/client";
 
-/** Resolves the effective per-lesson teacher rate for a group (override or the teacher's default). */
-async function getLessonRateForGroup(groupId: string) {
-  const group = await prisma.group.findUniqueOrThrow({
-    where: { id: groupId },
+/**
+ * Resolves the effective per-lesson teacher rate for a group (override or
+ * the teacher's default). Takes `userId` and scopes the lookup to it —
+ * never resolve a rate for a group without proving the caller owns it,
+ * even though every current caller already re-derives groupId from an
+ * already-ownership-checked LessonSession. Defense in depth: this function
+ * must stay safe to call from anywhere in the future without relying on
+ * every caller remembering to check first.
+ */
+async function getLessonRateForGroup(groupId: string, userId: string) {
+  const group = await prisma.group.findFirstOrThrow({
+    where: { id: groupId, userId },
     include: { user: true, course: true },
   });
   const rate = Number(group.teacherLessonRateOverride ?? group.user.defaultLessonRate);
   const lessonValue = computeLessonValue(Number(group.course.monthlyPrice), group.course.lessonsPerMonth);
   return { rate, lessonValue, group };
+}
+
+/**
+ * SECURITY: verifies `studentId` is actually one of `userId`'s own students
+ * AND is enrolled in `groupId` (the lesson session's group) before any
+ * attendance write touches it. Without this, a client could supply an
+ * arbitrary `studentId` alongside their own valid `lessonSessionId` and
+ * write/corrupt attendance (and retroactively recompute earnings) for a
+ * student that isn't theirs — the lessonSession ownership check alone does
+ * NOT prove the studentId belongs to the same teacher or group.
+ */
+async function assertStudentInGroup(studentId: string, groupId: string, userId: string): Promise<boolean> {
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, userId, groupId },
+    select: { id: true },
+  });
+  return !!student;
 }
 
 /**
@@ -39,9 +64,13 @@ async function getLessonRateForGroup(groupId: string) {
  * needing a separate follow-up read of the whole month to see the (possibly
  * retroactively changed) earnings on OTHER lessons for this student.
  */
-async function recomputeStudentEarnings(studentId: string, lessonRate: number) {
+async function recomputeStudentEarnings(studentId: string, lessonRate: number, userId: string) {
   const records = await prisma.attendance.findMany({
-    where: { studentId },
+    // `student: { userId }` is redundant with the assertStudentInGroup()
+    // check every caller already performs, but scoping the query itself
+    // means this function can never touch another teacher's attendance
+    // rows even if a future caller forgets that check.
+    where: { studentId, student: { userId } },
     include: { lessonSession: true },
     orderBy: { lessonSession: { date: "asc" } },
   });
@@ -104,7 +133,17 @@ export async function getGroupAttendanceJournal(groupId: string, monthDate: Date
     where: { id: groupId, userId: session.sub },
     include: {
       course: true,
-      students: { where: { deletedAt: null }, orderBy: [{ lastName: "asc" }, { firstName: "asc" }] },
+      // The journal grid (attendance-journal.tsx) only ever renders
+      // id/firstName/lastName for each student in the roster — never their
+      // photo, phone, address, etc. This used to fetch every field
+      // (including each student's full base64 photoUrl) on every single
+      // month-navigation click; narrowing the select is a pure win with no
+      // UI change needed since the client already only typed these 3 fields.
+      students: {
+        where: { deletedAt: null },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+        select: { id: true, firstName: true, lastName: true },
+      },
       scheduleSlots: true,
     },
   });
@@ -193,13 +232,19 @@ export async function markAttendance(input: unknown) {
   });
   if (!lessonSession) return { ok: false as const, error: "Bu dars sizga tegishli emas." };
 
+  // SECURITY: lessonSession ownership alone does not prove `studentId`
+  // belongs to this teacher or this group — must check separately, or a
+  // client could write attendance against another teacher's student.
+  const studentOk = await assertStudentInGroup(studentId, lessonSession.groupId, session.sub);
+  if (!studentOk) return { ok: false as const, error: "Bu student sizga yoki shu guruhga tegishli emas." };
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (lessonSession.date > today) {
     return { ok: false as const, error: "Kelajakdagi dars uchun davomat belgilab bo'lmaydi." };
   }
 
-  const { rate, lessonValue } = await getLessonRateForGroup(lessonSession.groupId);
+  const { rate, lessonValue } = await getLessonRateForGroup(lessonSession.groupId, session.sub);
 
   // Everything below is wrapped: any DB-level failure here (including a
   // schema mismatch like a not-yet-migrated column) must never throw
@@ -223,7 +268,7 @@ export async function markAttendance(input: unknown) {
       update: { status, note: resolvedNote, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
     });
 
-    updatedEarnings = await recomputeStudentEarnings(studentId, rate);
+    updatedEarnings = await recomputeStudentEarnings(studentId, rate, session.sub);
 
     await prisma.lessonSession.update({
       where: { id: lessonSessionId },
@@ -276,29 +321,52 @@ export async function bulkMarkAttendance(input: unknown) {
     return { ok: false as const, error: "Kelajakdagi dars uchun davomat belgilab bo'lmaydi." };
   }
 
-  const { rate, lessonValue } = await getLessonRateForGroup(lessonSession.groupId);
+  const { rate, lessonValue } = await getLessonRateForGroup(lessonSession.groupId, session.sub);
+
+  // SECURITY: only ever write attendance for students who are (a) this
+  // teacher's own and (b) actually enrolled in this lesson's group. Silently
+  // drop any mark whose studentId doesn't pass — the legitimate UI only ever
+  // sends studentIds from this same group's roster, so this should never
+  // filter anything out in normal use; it exists purely to close the IDOR
+  // gap for a malicious or buggy caller.
+  const validStudents = await prisma.student.findMany({
+    where: { groupId: lessonSession.groupId, userId: session.sub },
+    select: { id: true },
+  });
+  const validStudentIds = new Set(validStudents.map((s) => s.id));
+  const safeMarks = marks.filter((m) => validStudentIds.has(m.studentId));
+  if (safeMarks.length !== marks.length) {
+    console.error(
+      `[bulkMarkAttendance] dropped ${marks.length - safeMarks.length} mark(s) whose studentId isn't in group ${lessonSession.groupId} for user ${session.sub}`,
+    );
+  }
 
   // See the comment in markAttendance() above: never let a DB error escape
-  // this action uncaught.
+  // this action uncaught. Each student's upsert+recompute is independent of
+  // every other student's, so they run concurrently (Promise.all) instead of
+  // one-at-a-time — for a large group this is the difference between one
+  // round-trip "burst" and dozens of sequential round-trips.
   try {
-    for (const mark of marks) {
-      const resolvedArrivalTime = mark.status === "LATE" ? (mark.arrivalTime ?? null) : null;
-      const resolvedNote = mark.status === "EXCUSED_ABSENT" ? (mark.note ?? null) : null;
-      await prisma.attendance.upsert({
-        where: { studentId_lessonSessionId: { studentId: mark.studentId, lessonSessionId } },
-        create: {
-          studentId: mark.studentId,
-          lessonSessionId,
-          status: mark.status,
-          note: resolvedNote,
-          arrivalTime: resolvedArrivalTime,
-          teacherEarningAmount: 0,
-          lessonValueSnapshot: lessonValue,
-        },
-        update: { status: mark.status, note: resolvedNote, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
-      });
-      await recomputeStudentEarnings(mark.studentId, rate);
-    }
+    await Promise.all(
+      safeMarks.map(async (mark) => {
+        const resolvedArrivalTime = mark.status === "LATE" ? (mark.arrivalTime ?? null) : null;
+        const resolvedNote = mark.status === "EXCUSED_ABSENT" ? (mark.note ?? null) : null;
+        await prisma.attendance.upsert({
+          where: { studentId_lessonSessionId: { studentId: mark.studentId, lessonSessionId } },
+          create: {
+            studentId: mark.studentId,
+            lessonSessionId,
+            status: mark.status,
+            note: resolvedNote,
+            arrivalTime: resolvedArrivalTime,
+            teacherEarningAmount: 0,
+            lessonValueSnapshot: lessonValue,
+          },
+          update: { status: mark.status, note: resolvedNote, arrivalTime: resolvedArrivalTime, lessonValueSnapshot: lessonValue },
+        });
+        await recomputeStudentEarnings(mark.studentId, rate, session.sub);
+      }),
+    );
 
     await prisma.lessonSession.update({ where: { id: lessonSessionId }, data: { status: "COMPLETED" } });
   } catch (err) {
