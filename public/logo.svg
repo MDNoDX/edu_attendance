@@ -1,10 +1,24 @@
 <svg width="200" height="180" viewBox="0 0 200 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- mortarboard top -->
-  <path d="M100 10 L190 54 C194 56 194 61 190 63 L100 107 C99 107.5 97.5 107.5 97 107 L7 63 C3 61 3 56 7 54 L97 10 C97.5 9.5 99 9.5 100 10 Z" fill="#050533"/>
-  <!-- cap band / head -->
-  <path d="M55 72 L55 112 C55 132 75 148 100 148 C125 148 145 132 145 112 L145 72 L100 94 C99 94.5 98 94.5 97 94 L55 72 Z" fill="#050533"/>
-  <!-- tassel cord -->
-  <path d="M112 46 C90 52 74 66 68 84 C63 99 65 112 71 122" stroke="#4F46E5" stroke-width="11" stroke-linecap="round" fill="none"/>
-  <!-- tassel tip -->
-  <path d="M62 118 C60 128 60 138 65 148 C67 152 73 153 77 150 C81 147 82 143 80 138 C77 130 74 122 74 116 C74 112 68 111 65 114 C63 115.5 62 117 62 118 Z" fill="#4F46E5"/>
+  <!-- head / cap band: a clean rounded dome sitting under the mortarboard,
+       its top edge cut to a shallow "V" so it reads as tucked under the
+       flat top instead of floating separately -->
+  <path
+    d="M58 66 L58 104 C58 127 76 145 100 145 C124 145 142 127 142 104 L142 66 L100 88 Z"
+    fill="#3730A3"
+  />
+  <!-- mortarboard: a single flat, crisp rhombus — no inner notch or seam,
+       reads cleanly even at 24-32px sidebar sizes -->
+  <path
+    d="M100 16 L190 60 C194 62 194 66 190 68 L100 112 C99 112.5 97.5 112.5 97 112 L7 68 C3 66 3 62 7 60 L97 16 C97.5 15.5 99 15.5 100 16 Z"
+    fill="#4F46E5"
+  />
+  <!-- tassel: one smooth cord ending in a simple dot, no separate blob shape -->
+  <path
+    d="M167 53 C184 63 190 82 181 99"
+    stroke="#A5B4FC"
+    stroke-width="9"
+    stroke-linecap="round"
+    fill="none"
+  />
+  <circle cx="180" cy="108" r="9" fill="#A5B4FC"/>
 </svg>

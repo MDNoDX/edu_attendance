@@ -17,6 +17,9 @@ import {
   TrendingUp,
   ArrowUpRight,
   MessageSquareText,
+  Clock,
+  Minus,
+  X as XIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/shared/stat-card";
@@ -105,6 +108,12 @@ export function ReportDashboard({
   // include real figures regardless of this switch.
   const [pricesHidden, setPricesHidden] = useState(false);
   const [expandedGroupId, setExpandedGroupId] = useState<string | null>(null);
+  // Export used to be a big always-open card (checkboxes + buttons) sitting
+  // between the headline cards and the period stats — collapsed by default
+  // now so the primary view is just the numbers a teacher actually looks at
+  // day to day; exporting is an occasional action, not something that needs
+  // permanent screen real estate.
+  const [exportOpen, setExportOpen] = useState(false);
   // Per-student breakdown behind whichever headline card / period-stat box
   // was clicked — every one of those numbers is just a sum over
   // analytics.students, so a single generic dialog can explain any of them
@@ -385,35 +394,57 @@ export function ReportDashboard({
       </FadeInStagger>
 
       <Card className="border-primary/30 bg-primary/[0.03]">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Excel yoki PDF sifatida yuklab olish</CardTitle>
+        <CardHeader
+          className="cursor-pointer select-none pb-2"
+          role="button"
+          tabIndex={0}
+          onClick={() => setExportOpen((v) => !v)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setExportOpen((v) => !v);
+            }
+          }}
+        >
+          <CardTitle className="flex items-center justify-between text-base">
+            <span className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" /> Excel yoki PDF sifatida yuklab olish
+            </span>
+            {exportOpen ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Hisobotda ko&apos;rinadigan ustunlar</Label>
-            <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-card p-3 sm:grid-cols-3">
-              {ATTENDANCE_REPORT_FIELDS.map((field) => (
-                <label key={field.key} className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={selectedFields.includes(field.key)} onCheckedChange={() => toggleField(field.key)} />
-                  {field.label}
-                </label>
-              ))}
+        {exportOpen && (
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Hisobotda ko&apos;rinadigan ustunlar</Label>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-card p-3 sm:grid-cols-3">
+                {ATTENDANCE_REPORT_FIELDS.map((field) => (
+                  <label key={field.key} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={selectedFields.includes(field.key)} onCheckedChange={() => toggleField(field.key)} />
+                    {field.label}
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => handleExport("xlsx")} disabled={exporting !== null}>
-              {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-              Excel
-            </Button>
-            <Button onClick={() => handleExport("pdf")} disabled={exporting !== null}>
-              {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-              PDF
-            </Button>
-          </div>
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Check className="h-3.5 w-3.5" /> Yuklab olingan fayl boshida yuqoridagi uchta summa va tanlangan davr ustunlari bilan chiqadi.
-          </p>
-        </CardContent>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => handleExport("xlsx")} disabled={exporting !== null}>
+                {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                Excel
+              </Button>
+              <Button onClick={() => handleExport("pdf")} disabled={exporting !== null}>
+                {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                PDF
+              </Button>
+            </div>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Check className="h-3.5 w-3.5" /> Yuklab olingan fayl boshida yuqoridagi uchta summa va tanlangan davr ustunlari bilan chiqadi.
+            </p>
+          </CardContent>
+        )}
       </Card>
 
       <Card>
@@ -493,11 +524,8 @@ export function ReportDashboard({
                     <TableHead />
                     <TableHead>Guruh</TableHead>
                     <TableHead>Studentlar</TableHead>
-                    <TableHead>Umumiy summa</TableHead>
                     <TableHead>Oylik kutilayotgan</TableHead>
                     <TableHead>Olingan (shu oy)</TableHead>
-                    <TableHead>Davr ichida</TableHead>
-                    <TableHead>Yo&apos;qotilgan</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -516,16 +544,28 @@ export function ReportDashboard({
                         </TableCell>
                         <TableCell className="font-medium">{g.name}</TableCell>
                         <TableCell>{g.studentCount}</TableCell>
-                        <TableCell>{money(g.grossRevenue)}</TableCell>
                         <TableCell className="text-violet-600 dark:text-violet-400">{money(g.expectedThisMonth)}</TableCell>
                         <TableCell className="text-success">{money(g.earnedMonthToDate)}</TableCell>
-                        <TableCell className="text-success">{money(g.earnedInRange)}</TableCell>
-                        <TableCell className="text-destructive">{money(g.lostToCutoff)}</TableCell>
                       </TableRow>
                       {expandedGroupId === g.id && (
                         <TableRow className="bg-muted/20 hover:bg-muted/20">
-                          <TableCell colSpan={8} className="p-0">
+                          <TableCell colSpan={5} className="p-0">
                             <div className="space-y-2 p-4">
+                              {/* Umumiy summa / Davr ichida / Yo'qotilgan used to
+                                  be their own always-visible columns — moved
+                                  here since they matter less often than the
+                                  two figures kept in the main row. */}
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                                <span>
+                                  Umumiy summa: <strong className="text-foreground">{money(g.grossRevenue)}</strong>
+                                </span>
+                                <span>
+                                  Davr ichida: <strong className="text-success">{money(g.earnedInRange)}</strong>
+                                </span>
+                                <span>
+                                  Yo&apos;qotilgan: <strong className="text-destructive">{money(g.lostToCutoff)}</strong>
+                                </span>
+                              </div>
                               <p className="text-xs text-muted-foreground">
                                 Nega bunday: har bir student uchun ulushingiz = shu guruhning bitta darsdan
                                 olinadigan ulushi ({money(Number(studentsByGroup.get(g.id)?.[0]?.lessonRate ?? 0))}) ×
@@ -580,13 +620,9 @@ export function ReportDashboard({
                   <TableRow>
                     <TableHead>Student</TableHead>
                     <TableHead>Guruh</TableHead>
-                    <TableHead>Keldi</TableHead>
-                    <TableHead>Kechikdi</TableHead>
-                    <TableHead>Sababli</TableHead>
-                    <TableHead>Sababsiz</TableHead>
+                    <TableHead>Davomat</TableHead>
                     <TableHead>Oylik kutilayotgan</TableHead>
                     <TableHead>Olingan (shu oy)</TableHead>
-                    <TableHead>Davr ichida</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -594,13 +630,41 @@ export function ReportDashboard({
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.fullName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{s.groupName}</TableCell>
-                      <TableCell>{s.present}</TableCell>
-                      <TableCell>{s.late}</TableCell>
-                      <TableCell>{s.excusedAbsent}</TableCell>
-                      <TableCell>{s.unexcusedAbsent}</TableCell>
+                      <TableCell>
+                        {/* Keldi/Kechikdi/Sababli/Sababsiz used to be 4 of
+                            their own columns — squeezed into one compact,
+                            color-coded cluster so the table stops scrolling
+                            wide on smaller screens. "Davr ichida" moved to
+                            the period-stat drill-down above, it's not lost. */}
+                        <div className="flex flex-wrap gap-1">
+                          <span
+                            title="Keldi"
+                            className="flex items-center gap-0.5 rounded bg-success/15 px-1.5 py-0.5 text-xs font-medium text-success"
+                          >
+                            <Check className="h-3 w-3" /> {s.present}
+                          </span>
+                          <span
+                            title="Kechikdi"
+                            className="flex items-center gap-0.5 rounded bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning"
+                          >
+                            <Clock className="h-3 w-3" /> {s.late}
+                          </span>
+                          <span
+                            title="Sababli kelmadi"
+                            className="flex items-center gap-0.5 rounded bg-sky-500/15 px-1.5 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-400"
+                          >
+                            <Minus className="h-3 w-3" /> {s.excusedAbsent}
+                          </span>
+                          <span
+                            title="Sababsiz kelmadi"
+                            className="flex items-center gap-0.5 rounded bg-destructive/15 px-1.5 py-0.5 text-xs font-medium text-destructive"
+                          >
+                            <XIcon className="h-3 w-3" /> {s.unexcusedAbsent}
+                          </span>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-violet-600 dark:text-violet-400">{money(s.expectedThisMonth)}</TableCell>
                       <TableCell className="text-success">{money(s.earnedMonthToDate)}</TableCell>
-                      <TableCell className="text-success">{money(s.earnedInRange)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
