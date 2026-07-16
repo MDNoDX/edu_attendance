@@ -1,21 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MoneyInput } from "@/components/ui/money-input";
 import { registerSchema, type RegisterInput } from "@/lib/validations";
+import { checkUsernameAvailable } from "@/app/actions/username";
+
+type UsernameStatus = "idle" | "checking" | "available" | "taken";
 
 export function SignupForm() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
 
   const {
     register,
@@ -28,8 +32,40 @@ export function SignupForm() {
     defaultValues: { defaultLessonRate: 0 },
   });
 
+  const usernameValue = watch("username");
+
+  // Live "is this login taken" check while typing, debounced so it doesn't
+  // fire on every keystroke. A stale-response guard (via the `cancelled`
+  // flag) makes sure a slow earlier check can never overwrite the result of
+  // a more recent one if they resolve out of order.
+  useEffect(() => {
+    if (!usernameValue || usernameValue.length < 3 || errors.username) {
+      setUsernameStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setUsernameStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUsernameAvailable(usernameValue);
+        if (cancelled) return;
+        setUsernameStatus(res.available ? "available" : "taken");
+      } catch {
+        if (!cancelled) setUsernameStatus("idle");
+      }
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [usernameValue, errors.username]);
+
   async function onSubmit(data: RegisterInput) {
     setServerError(null);
+    if (usernameStatus === "taken") {
+      setServerError("Bu login band. Boshqa login tanlang.");
+      return;
+    }
     const res = await fetch("/api/auth/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -57,8 +93,21 @@ export function SignupForm() {
 
       <div className="space-y-2">
         <Label htmlFor="username">Login</Label>
-        <Input id="username" autoComplete="username" {...register("username")} />
-        {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
+        <div className="relative">
+          <Input id="username" autoComplete="username" className="pr-9" {...register("username")} />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2">
+            {usernameStatus === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+            {usernameStatus === "available" && <Check className="h-4 w-4 text-success" />}
+            {usernameStatus === "taken" && <X className="h-4 w-4 text-destructive" />}
+          </span>
+        </div>
+        {errors.username ? (
+          <p className="text-xs text-destructive">{errors.username.message}</p>
+        ) : usernameStatus === "taken" ? (
+          <p className="text-xs text-destructive">Bu login band — boshqasini tanlang.</p>
+        ) : usernameStatus === "available" ? (
+          <p className="text-xs text-success">Bu login bo&apos;sh, ishlatishingiz mumkin.</p>
+        ) : null}
       </div>
 
       <div className="space-y-2">

@@ -6,12 +6,13 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import type { z } from "zod";
-import { Pencil, KeyRound, LogIn, Users as UsersIcon } from "lucide-react";
+import { Pencil, KeyRound, LogIn, Users as UsersIcon, ShieldPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { MoneyInput } from "@/components/ui/money-input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -19,7 +20,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { EmptyState } from "@/components/shared/empty-state";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { adminUpdateTeacherSchema, adminResetPasswordSchema } from "@/lib/validations";
-import { updateTeacherByAdmin, resetTeacherPassword, impersonateTeacher } from "@/app/actions/admin";
+import { updateTeacherByAdmin, resetTeacherPassword, impersonateTeacher, promoteToAdmin } from "@/app/actions/admin";
+import { ADMIN_PERMISSIONS, ADMIN_PERMISSION_LABELS, type AdminPermission } from "@/lib/permissions";
 import { formatUZS, formatDate, initials } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
@@ -39,12 +41,21 @@ interface TeacherRow {
   _count: { students: number; groups: number; courses: number };
 }
 
-export function TeachersManager({ initialTeachers }: { initialTeachers: TeacherRow[] }) {
+export function TeachersManager({
+  initialTeachers,
+  isOwner = false,
+}: {
+  initialTeachers: TeacherRow[];
+  /** Only an owner-level admin can promote a teacher to admin. */
+  isOwner?: boolean;
+}) {
   const router = useRouter();
   const [teachers, setTeachers] = useState(initialTeachers);
   const [editTarget, setEditTarget] = useState<TeacherRow | null>(null);
   const [resetTarget, setResetTarget] = useState<TeacherRow | null>(null);
   const [impersonateTarget, setImpersonateTarget] = useState<TeacherRow | null>(null);
+  const [promoteTarget, setPromoteTarget] = useState<TeacherRow | null>(null);
+  const [promotePermissions, setPromotePermissions] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
 
   const editForm = useForm<AdminUpdateTeacherInput>({ resolver: zodResolver(adminUpdateTeacherSchema) });
@@ -129,6 +140,42 @@ export function TeachersManager({ initialTeachers }: { initialTeachers: TeacherR
     }
   }
 
+  function openPromote(teacher: TeacherRow) {
+    setPromoteTarget(teacher);
+    setPromotePermissions(new Set());
+  }
+
+  function togglePromotePermission(p: AdminPermission) {
+    setPromotePermissions((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+  }
+
+  async function handlePromote() {
+    if (!promoteTarget) return;
+    setBusy(true);
+    try {
+      const res = await promoteToAdmin(promoteTarget.id, Array.from(promotePermissions));
+      if (!res.ok) {
+        toast.error(typeof res.error === "string" ? res.error : "Xatolik yuz berdi.");
+        return;
+      }
+      // The teacher just became a SUPER_ADMIN and disappears from this list,
+      // appearing instead in the Adminlar section — refresh so both lists
+      // reflect the change from the server rather than hand-patching two
+      // separate components' local state.
+      toast.success(`${promoteTarget.fullName} endi admin.`);
+      router.refresh();
+      setTeachers((prev) => prev.filter((t) => t.id !== promoteTarget.id));
+    } finally {
+      setBusy(false);
+      setPromoteTarget(null);
+    }
+  }
+
   if (teachers.length === 0) {
     return <EmptyState icon={UsersIcon} title="O'qituvchilar topilmadi" description="Hali birorta o'qituvchi ro'yxatdan o'tmagan." />;
   }
@@ -191,6 +238,11 @@ export function TeachersManager({ initialTeachers }: { initialTeachers: TeacherR
                       <Button variant="ghost" size="icon" onClick={() => setImpersonateTarget(teacher)} aria-label="Nomidan kirish">
                         <LogIn className="h-4 w-4" />
                       </Button>
+                      {isOwner && (
+                        <Button variant="ghost" size="icon" onClick={() => openPromote(teacher)} aria-label="Adminlikka tayinlash">
+                          <ShieldPlus className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -282,6 +334,38 @@ export function TeachersManager({ initialTeachers }: { initialTeachers: TeacherR
         loading={busy}
         onConfirm={handleImpersonate}
       />
+
+      <Dialog open={!!promoteTarget} onOpenChange={(open) => !open && setPromoteTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{promoteTarget?.fullName} — adminlikka tayinlash</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Qanday vakolatlar berishni tanlang. Keyinchalik /admin sahifasidagi &quot;Adminlar&quot; bo&apos;limidan
+            o&apos;zgartirishingiz mumkin.
+          </p>
+          <div className="space-y-3">
+            {ADMIN_PERMISSIONS.map((p) => (
+              <label key={p} className="flex items-start gap-2.5 rounded-lg border border-border p-3 cursor-pointer">
+                <Checkbox
+                  checked={promotePermissions.has(p)}
+                  onCheckedChange={() => togglePromotePermission(p)}
+                  className="mt-0.5"
+                />
+                <span className="space-y-0.5">
+                  <Label className="cursor-pointer">{ADMIN_PERMISSION_LABELS[p].label}</Label>
+                  <p className="text-xs text-muted-foreground">{ADMIN_PERMISSION_LABELS[p].description}</p>
+                </span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button onClick={handlePromote} disabled={busy}>
+              {busy ? "Tayinlanmoqda..." : "Admin qilish"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/db";
+import { prisma, toFriendlyDbError } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { groupSchema } from "@/lib/validations";
 import { generateLessonSessionsForGroup } from "@/app/actions/schedule";
@@ -78,21 +78,25 @@ export async function createGroup(input: unknown) {
   const conflict = await assertNoRoomConflict(session.sub, data.roomName, scheduleSlots);
   if (conflict) return { ok: false as const, error: conflict };
 
-  const group = await prisma.group.create({
-    data: {
-      ...data,
-      userId: session.sub,
-      scheduleSlots: { create: scheduleSlots },
-    },
-    include: { scheduleSlots: true },
-  });
+  try {
+    const group = await prisma.group.create({
+      data: {
+        ...data,
+        userId: session.sub,
+        scheduleSlots: { create: scheduleSlots },
+      },
+      include: { scheduleSlots: true },
+    });
 
-  // Pre-generate the next 8 weeks of concrete lesson sessions from the template.
-  await generateLessonSessionsForGroup(group.id, 8);
+    // Pre-generate the next 8 weeks of concrete lesson sessions from the template.
+    await generateLessonSessionsForGroup(group.id, 8);
 
-  revalidatePath("/dashboard/groups");
-  revalidatePath("/dashboard/schedule");
-  return { ok: true as const, group: serializeDecimals(group) };
+    revalidatePath("/dashboard/groups");
+    revalidatePath("/dashboard/schedule");
+    return { ok: true as const, group: serializeDecimals(group) };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function updateGroup(groupId: string, input: unknown) {
@@ -109,20 +113,24 @@ export async function updateGroup(groupId: string, input: unknown) {
     if (conflict) return { ok: false as const, error: conflict };
   }
 
-  const group = await prisma.group.update({
-    where: { id: groupId },
-    data: {
-      ...data,
-      ...(scheduleSlots
-        ? { scheduleSlots: { deleteMany: {}, create: scheduleSlots } }
-        : {}),
-    },
-    include: { scheduleSlots: true },
-  });
+  try {
+    const group = await prisma.group.update({
+      where: { id: groupId },
+      data: {
+        ...data,
+        ...(scheduleSlots
+          ? { scheduleSlots: { deleteMany: {}, create: scheduleSlots } }
+          : {}),
+      },
+      include: { scheduleSlots: true },
+    });
 
-  revalidatePath("/dashboard/groups");
-  revalidatePath("/dashboard/schedule");
-  return { ok: true as const, group: serializeDecimals(group) };
+    revalidatePath("/dashboard/groups");
+    revalidatePath("/dashboard/schedule");
+    return { ok: true as const, group: serializeDecimals(group) };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function updateGroupStatus(groupId: string, status: "ACTIVE" | "FINISHED" | "PAUSED") {
@@ -130,10 +138,13 @@ export async function updateGroupStatus(groupId: string, status: "ACTIVE" | "FIN
   const existing = await prisma.group.findFirst({ where: { id: groupId, userId: session.sub } });
   if (!existing) return { ok: false as const, error: "Guruh topilmadi." };
 
-  const group = await prisma.group.update({ where: { id: groupId }, data: { status } });
-
-  revalidatePath("/dashboard/groups");
-  return { ok: true as const, group: serializeDecimals(group) };
+  try {
+    const group = await prisma.group.update({ where: { id: groupId }, data: { status } });
+    revalidatePath("/dashboard/groups");
+    return { ok: true as const, group: serializeDecimals(group) };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function deleteGroup(groupId: string) {
@@ -146,8 +157,11 @@ export async function deleteGroup(groupId: string) {
     return { ok: false as const, error: "Bu guruhda aktiv studentlar bor." };
   }
 
-  await prisma.group.update({ where: { id: groupId }, data: { deletedAt: new Date(), status: "FINISHED" } });
-
-  revalidatePath("/dashboard/groups");
-  return { ok: true as const };
+  try {
+    await prisma.group.update({ where: { id: groupId }, data: { deletedAt: new Date(), status: "FINISHED" } });
+    revalidatePath("/dashboard/groups");
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }

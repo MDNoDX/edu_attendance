@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/db";
+import { prisma, toFriendlyDbError } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { courseSchema } from "@/lib/validations";
 import { serializeDecimals } from "@/lib/serialize";
@@ -28,12 +28,15 @@ export async function createCourse(input: unknown) {
   const parsed = courseSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: parsed.error.flatten() };
 
-  const course = await prisma.course.create({
-    data: { ...parsed.data, userId: session.sub },
-  });
-
-  revalidatePath("/dashboard/courses");
-  return { ok: true as const, course: serializeDecimals(course) };
+  try {
+    const course = await prisma.course.create({
+      data: { ...parsed.data, userId: session.sub },
+    });
+    revalidatePath("/dashboard/courses");
+    return { ok: true as const, course: serializeDecimals(course) };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function updateCourse(courseId: string, input: unknown) {
@@ -44,13 +47,16 @@ export async function updateCourse(courseId: string, input: unknown) {
   const existing = await prisma.course.findFirst({ where: { id: courseId, userId: session.sub } });
   if (!existing) return { ok: false as const, error: "Kurs topilmadi." };
 
-  const course = await prisma.course.update({
-    where: { id: courseId },
-    data: parsed.data,
-  });
-
-  revalidatePath("/dashboard/courses");
-  return { ok: true as const, course: serializeDecimals(course) };
+  try {
+    const course = await prisma.course.update({
+      where: { id: courseId },
+      data: parsed.data,
+    });
+    revalidatePath("/dashboard/courses");
+    return { ok: true as const, course: serializeDecimals(course) };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function deleteCourse(courseId: string) {
@@ -64,8 +70,11 @@ export async function deleteCourse(courseId: string) {
     return { ok: false as const, error: "Bu kursda faol guruhlar bor." };
   }
 
-  await prisma.course.update({ where: { id: courseId }, data: { deletedAt: new Date(), isActive: false } });
-
-  revalidatePath("/dashboard/courses");
-  return { ok: true as const };
+  try {
+    await prisma.course.update({ where: { id: courseId }, data: { deletedAt: new Date(), isActive: false } });
+    revalidatePath("/dashboard/courses");
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }

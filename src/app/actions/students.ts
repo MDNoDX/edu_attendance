@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/db";
+import { prisma, toFriendlyDbError } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { studentSchema } from "@/lib/validations";
 import { serializeDecimals } from "@/lib/serialize";
@@ -73,13 +73,23 @@ export async function createStudent(input: unknown) {
   if (!course) return { ok: false as const, error: "Kurs topilmadi." };
   if (!group) return { ok: false as const, error: "Guruh topilmadi." };
 
-  const student = await prisma.student.create({
-    data: { ...parsed.data, userId: session.sub },
-  });
-
-  revalidatePath("/dashboard/students");
-  revalidatePath(`/dashboard/groups/${parsed.data.groupId}`);
-  return { ok: true as const, student };
+  // NOTE: deliberately NOT revalidating /dashboard/groups/[groupId] here (only
+  // the students list). That page runs a fairly heavy Server Component fetch
+  // (attendance self-heal + DB queries) — forcing it to re-run as a side
+  // effect of an unrelated student edit is wasted work, and if that extra
+  // fetch ever hiccups, it's exactly the kind of coupling that made
+  // attendance marking "jump to another screen" in an earlier bug. The
+  // Students page already refetches its own list client-side after this
+  // resolves, which is the only thing that actually needs to be fresh here.
+  try {
+    const student = await prisma.student.create({
+      data: { ...parsed.data, userId: session.sub },
+    });
+    revalidatePath("/dashboard/students");
+    return { ok: true as const, student };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function updateStudent(studentId: string, input: unknown) {
@@ -90,12 +100,13 @@ export async function updateStudent(studentId: string, input: unknown) {
   const parsed = studentSchema.partial().safeParse(input);
   if (!parsed.success) return { ok: false as const, error: parsed.error.flatten() };
 
-  const student = await prisma.student.update({ where: { id: studentId }, data: parsed.data });
-
-  revalidatePath("/dashboard/students");
-  revalidatePath(`/dashboard/students/${studentId}`);
-  revalidatePath(`/dashboard/groups/${student.groupId}`);
-  return { ok: true as const, student };
+  try {
+    const student = await prisma.student.update({ where: { id: studentId }, data: parsed.data });
+    revalidatePath("/dashboard/students");
+    return { ok: true as const, student };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function deleteStudent(studentId: string) {
@@ -103,9 +114,11 @@ export async function deleteStudent(studentId: string) {
   const existing = await prisma.student.findFirst({ where: { id: studentId, userId: session.sub } });
   if (!existing) return { ok: false as const, error: "Student topilmadi." };
 
-  await prisma.student.update({ where: { id: studentId }, data: { deletedAt: new Date() } });
-
-  revalidatePath("/dashboard/students");
-  revalidatePath(`/dashboard/groups/${existing.groupId}`);
-  return { ok: true as const };
+  try {
+    await prisma.student.update({ where: { id: studentId }, data: { deletedAt: new Date() } });
+    revalidatePath("/dashboard/students");
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }

@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
+import type { AdminPermission } from "@/lib/permissions";
 
 const SESSION_COOKIE = "ustoz_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -108,5 +109,55 @@ export async function requireSuperAdmin(): Promise<SessionPayload> {
   if (!user || !user.isActive || user.role !== "SUPER_ADMIN") {
     throw new Error("FORBIDDEN");
   }
+  return session;
+}
+
+/**
+ * Fetches the current admin's ownership/permission state FRESH from the
+ * database every call — permissions can be revoked by an owner at any time,
+ * and unlike the role check this deliberately never trusts anything cached
+ * in the JWT, so a change takes effect on the admin's very next action
+ * rather than only after they log back in.
+ */
+async function requireAdminContext(): Promise<{
+  session: SessionPayload;
+  isOwner: boolean;
+  permissions: string[];
+}> {
+  const session = await requireSession();
+  const user = await prisma.user.findUnique({
+    where: { id: session.sub },
+    select: { role: true, isActive: true, isOwner: true, permissions: true },
+  });
+  if (!user || !user.isActive || user.role !== "SUPER_ADMIN") {
+    throw new Error("FORBIDDEN");
+  }
+  return { session, isOwner: user.isOwner, permissions: user.permissions };
+}
+
+/**
+ * Throws unless the current admin holds `permission` — an owner (isOwner)
+ * always passes regardless of their explicit `permissions` list, since
+ * owners implicitly have every capability.
+ */
+export async function requireAdminPermission(permission: AdminPermission): Promise<SessionPayload> {
+  const { session, isOwner, permissions } = await requireAdminContext();
+  if (!isOwner && !permissions.includes(permission)) {
+    throw new Error("FORBIDDEN");
+  }
+  return session;
+}
+
+/**
+ * Throws unless the current admin is an owner-level account. Only owners
+ * (provisioned via prisma/create-admin.ts) can promote/demote other
+ * accounts to SUPER_ADMIN or change anyone's permissions — this is the one
+ * capability that can never be delegated via `permissions`, since granting
+ * it would let a non-owner admin escalate themselves or anyone else to full
+ * ownership.
+ */
+export async function requireOwnerAdmin(): Promise<SessionPayload> {
+  const { session, isOwner } = await requireAdminContext();
+  if (!isOwner) throw new Error("FORBIDDEN");
   return session;
 }

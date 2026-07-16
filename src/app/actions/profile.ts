@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/db";
-import { requireSession, verifyPassword, hashPassword } from "@/lib/auth";
+import { prisma, toFriendlyDbError } from "@/lib/db";
+import { requireSession, verifyPassword, hashPassword, createSessionCookie } from "@/lib/auth";
 import { profileUpdateSchema, changePasswordSchema } from "@/lib/validations";
 import { serializeDecimals } from "@/lib/serialize";
 
@@ -42,17 +42,46 @@ export async function updateProfile(input: unknown) {
     if (existing) return { ok: false as const, error: "Bu email band." };
   }
 
-  const user = await prisma.user.update({
-    where: { id: session.sub },
-    data: {
-      ...parsed.data,
-      email: parsed.data.email === "" ? null : parsed.data.email,
-    },
-    select: SAFE_PROFILE_SELECT,
-  });
+  // A teacher can change their own login — checked here again (not just via
+  // checkUsernameAvailable on the client) so a race between two people
+  // grabbing the same username at once can never both succeed.
+  if (parsed.data.username) {
+    const existing = await prisma.user.findFirst({
+      where: { username: parsed.data.username, id: { not: session.sub } },
+    });
+    if (existing) return { ok: false as const, error: "Bu login band. Boshqa login tanlang." };
+  }
 
-  revalidatePath("/dashboard/profile");
-  return { ok: true as const, user: serializeDecimals(user) };
+  try {
+    const user = await prisma.user.update({
+      where: { id: session.sub },
+      data: {
+        ...parsed.data,
+        email: parsed.data.email === "" ? null : parsed.data.email,
+      },
+      select: SAFE_PROFILE_SELECT,
+    });
+
+    // The session cookie's `username`/`fullName` claims are only ever set at
+    // login time — without re-issuing it here, the header/menu would keep
+    // showing the OLD username until the next login, even though the
+    // profile page itself (re-fetched via revalidatePath) already shows the
+    // new one. Re-sign with the same role/impersonatorId so this never
+    // silently changes what the session is allowed to do, only its display.
+    await createSessionCookie({
+      sub: session.sub,
+      username: user.username,
+      fullName: user.fullName,
+      role: session.role,
+      ...(session.impersonatorId ? { impersonatorId: session.impersonatorId } : {}),
+    });
+
+    revalidatePath("/dashboard/profile");
+    revalidatePath("/dashboard");
+    return { ok: true as const, user: serializeDecimals(user) };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function changePassword(input: unknown) {

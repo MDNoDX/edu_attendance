@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
+import { Loader2, Check, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,9 @@ import {
   type ChangePasswordInput,
 } from "@/lib/validations";
 import { updateProfile, changePassword } from "@/app/actions/profile";
+import { checkUsernameAvailable } from "@/app/actions/username";
+
+type UsernameStatus = "idle" | "checking" | "available" | "taken";
 
 interface ProfileData {
   username: string;
@@ -31,6 +35,7 @@ export function ProfileForm({ profile }: { profile: ProfileData }) {
   const profileForm = useForm<ProfileUpdateInput>({
     resolver: zodResolver(profileUpdateSchema),
     defaultValues: {
+      username: profile.username,
       fullName: profile.fullName,
       email: profile.email ?? "",
       phone: profile.phone ?? "",
@@ -42,11 +47,41 @@ export function ProfileForm({ profile }: { profile: ProfileData }) {
 
   const passwordForm = useForm<ChangePasswordInput>({ resolver: zodResolver(changePasswordSchema) });
   const [passwordBusy, setPasswordBusy] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+
+  const usernameValue = profileForm.watch("username");
+
+  useEffect(() => {
+    // No need to check anything if it's unchanged from what they already have.
+    if (!usernameValue || usernameValue === profile.username || profileForm.formState.errors.username) {
+      setUsernameStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setUsernameStatus("checking");
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUsernameAvailable(usernameValue);
+        if (cancelled) return;
+        setUsernameStatus(res.available ? "available" : "taken");
+      } catch {
+        if (!cancelled) setUsernameStatus("idle");
+      }
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [usernameValue, profile.username, profileForm.formState.errors.username]);
 
   async function onSaveProfile(data: ProfileUpdateInput) {
+    if (usernameStatus === "taken") {
+      toast.error("Bu login band. Boshqa login tanlang.");
+      return;
+    }
     const res = await updateProfile(data);
     if (!res.ok) {
-      toast.error("Ma'lumotlarni tekshiring.");
+      toast.error(typeof res.error === "string" ? res.error : "Ma'lumotlarni tekshiring.");
       return;
     }
     toast.success("Profil yangilandi.");
@@ -77,7 +112,23 @@ export function ProfileForm({ profile }: { profile: ProfileData }) {
           <form onSubmit={profileForm.handleSubmit(onSaveProfile)} className="space-y-4">
             <div className="space-y-2">
               <Label>Login</Label>
-              <Input value={profile.username} disabled />
+              <div className="relative">
+                <Input autoComplete="username" className="pr-9" {...profileForm.register("username")} />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                  {usernameStatus === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                  {usernameStatus === "available" && <Check className="h-4 w-4 text-success" />}
+                  {usernameStatus === "taken" && <X className="h-4 w-4 text-destructive" />}
+                </span>
+              </div>
+              {profileForm.formState.errors.username ? (
+                <p className="text-xs text-destructive">{profileForm.formState.errors.username.message}</p>
+              ) : usernameStatus === "taken" ? (
+                <p className="text-xs text-destructive">Bu login band — boshqasini tanlang.</p>
+              ) : usernameStatus === "available" ? (
+                <p className="text-xs text-success">Bu login bo&apos;sh, saqlashingiz mumkin.</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Tizimga shu login bilan kirasiz.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Ism-familiya</Label>

@@ -1,7 +1,15 @@
 /**
  * One-time provisioning script for a SUPER_ADMIN account. There is no
  * self-signup path for admins (by design — /signup always creates a
- * TEACHER) so this is the only way to create one.
+ * TEACHER) so this is the only way to create the very first one.
+ *
+ * Every account created by this script is an OWNER-level admin (isOwner =
+ * true) — only an owner can promote/demote other accounts to SUPER_ADMIN or
+ * change their permissions from the /admin UI. Anyone able to run this
+ * script already has direct database access, so trusting it as the root of
+ * the admin trust chain is reasonable; owners can then promote additional,
+ * more limited admins (with only specific permissions) straight from the
+ * web UI without ever touching this script again.
  *
  * Usage (reads from env vars so the password never appears in shell
  * history / process list args):
@@ -44,17 +52,20 @@ async function main() {
       fullName,
       role: "SUPER_ADMIN",
       isActive: true,
+      isOwner: true,
     },
     update: {
       passwordHash,
       fullName,
       role: "SUPER_ADMIN",
       isActive: true,
+      isOwner: true,
     },
   });
 
-  console.log(`Super-admin tayyor: username="${user.username}", id=${user.id}`);
+  console.log(`Owner-admin tayyor: username="${user.username}", id=${user.id}`);
   console.log(`/login sahifasidan shu login/parol bilan kiring — avtomatik /admin ga yo'naltiriladi.`);
+  console.log(`Bu hisob "owner" — /admin panelidan boshqa o'qituvchilarni admin qilib tayinlashi mumkin.`);
 }
 
 main()

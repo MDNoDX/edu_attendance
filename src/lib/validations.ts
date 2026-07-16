@@ -10,12 +10,15 @@ export const loginSchema = z.object({
   password: z.string().min(4, "Parol kamida 4 ta belgidan iborat bo'lishi kerak"),
 });
 
+/** Shared everywhere a username is entered (signup, profile self-service, admin edit). */
+export const usernameSchema = z
+  .string()
+  .min(3, "Login kamida 3 ta belgi")
+  .max(32)
+  .regex(/^[a-zA-Z0-9_.]+$/, "Login faqat lotin harflar, raqam, _ va . dan iborat bo'lsin");
+
 export const registerSchema = z.object({
-  username: z
-    .string()
-    .min(3, "Login kamida 3 ta belgi")
-    .max(32)
-    .regex(/^[a-zA-Z0-9_.]+$/, "Login faqat lotin harflar, raqam, _ va . dan iborat bo'lsin"),
+  username: usernameSchema,
   password: z.string().min(6, "Parol kamida 6 ta belgi"),
   fullName: z.string().min(2, "Ism-familiya kiritilishi shart"),
   email: z.string().email("Email noto'g'ri").optional().or(z.literal("")),
@@ -25,6 +28,7 @@ export const registerSchema = z.object({
 });
 
 export const profileUpdateSchema = z.object({
+  username: usernameSchema.optional(),
   fullName: z.string().min(2).optional(),
   email: z.string().email().optional().or(z.literal("")),
   phone: z.string().optional(),
@@ -164,18 +168,13 @@ export const recordPaymentSchema = z.object({
 
 // ----------------------------------------------------------------------------
 // SUPER ADMIN — editing/managing teacher accounts from /admin. Separate from
-// profileUpdateSchema because an admin can also touch username/isActive,
-// which a teacher can never change about their own account through /dashboard.
+// profileUpdateSchema because an admin can also touch isActive, which a
+// teacher can never change about their own account through /dashboard.
 // ----------------------------------------------------------------------------
 
 export const adminUpdateTeacherSchema = z.object({
   fullName: z.string().min(2, "Ism-familiya kiritilishi shart").optional(),
-  username: z
-    .string()
-    .min(3, "Login kamida 3 ta belgi")
-    .max(32)
-    .regex(/^[a-zA-Z0-9_.]+$/, "Login faqat lotin harflar, raqam, _ va . dan iborat bo'lsin")
-    .optional(),
+  username: usernameSchema.optional(),
   email: z.string().email("Email noto'g'ri").optional().or(z.literal("")),
   phone: z.string().optional(),
   defaultLessonRate: z.coerce.number().min(0).optional(),

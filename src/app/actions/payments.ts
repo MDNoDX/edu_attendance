@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/db";
+import { prisma, toFriendlyDbError } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 import { recordPaymentSchema } from "@/lib/validations";
 import { serializeDecimals } from "@/lib/serialize";
@@ -95,32 +95,36 @@ export async function recordPayment(input: unknown) {
   const student = await prisma.student.findFirst({ where: { id: studentId, userId: session.sub } });
   if (!student) return { ok: false as const, error: "Student topilmadi." };
 
-  const month = firstOfMonth(billingMonth);
-  const payment = await prisma.payment.upsert({
-    where: { studentId_billingMonth: { studentId, billingMonth: month } },
-    create: { userId: session.sub, studentId, billingMonth: month, amountDue, amountPaid: 0, status: "UNPAID" },
-    update: {},
-  });
+  try {
+    const month = firstOfMonth(billingMonth);
+    const payment = await prisma.payment.upsert({
+      where: { studentId_billingMonth: { studentId, billingMonth: month } },
+      create: { userId: session.sub, studentId, billingMonth: month, amountDue, amountPaid: 0, status: "UNPAID" },
+      update: {},
+    });
 
-  const newAmountPaid = Number(payment.amountPaid) + amount;
-  const status: PaymentStatus =
-    newAmountPaid >= Number(payment.amountDue) ? "PAID" : newAmountPaid > 0 ? "PARTIAL" : "UNPAID";
+    const newAmountPaid = Number(payment.amountPaid) + amount;
+    const status: PaymentStatus =
+      newAmountPaid >= Number(payment.amountDue) ? "PAID" : newAmountPaid > 0 ? "PARTIAL" : "UNPAID";
 
-  const updated = await prisma.payment.update({
-    where: { id: payment.id },
-    data: {
-      amountPaid: newAmountPaid,
-      status,
-      note,
-      transactions: {
-        create: { amount, method, receiptNumber, note },
+    const updated = await prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        amountPaid: newAmountPaid,
+        status,
+        note,
+        transactions: {
+          create: { amount, method, receiptNumber, note },
+        },
       },
-    },
-    include: { transactions: true },
-  });
+      include: { transactions: true },
+    });
 
-  revalidatePath("/dashboard/payments");
-  return { ok: true as const, payment: serializeDecimals(updated) };
+    revalidatePath("/dashboard/payments");
+    return { ok: true as const, payment: serializeDecimals(updated) };
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
 }
 
 export async function getStudentPaymentSummary(studentId: string) {

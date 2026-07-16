@@ -2,10 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import { prisma } from "@/lib/db";
+import { prisma, toFriendlyDbError } from "@/lib/db";
 import {
   requireSuperAdmin,
   requireSession,
+  requireAdminPermission,
+  requireOwnerAdmin,
   hashPassword,
   signSession,
   SESSION_COOKIE_NAME,
@@ -13,12 +15,23 @@ import {
 } from "@/lib/auth";
 import { adminUpdateTeacherSchema, adminResetPasswordSchema } from "@/lib/validations";
 import { serializeDecimals } from "@/lib/serialize";
+import { ADMIN_PERMISSIONS, isValidAdminPermission } from "@/lib/permissions";
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
 
+/** The logged-in admin's own ownership/permission state, for the /admin UI to decide what to show. */
+export async function getMyAdminAccess() {
+  const session = await requireSuperAdmin();
+  const me = await prisma.user.findUniqueOrThrow({
+    where: { id: session.sub },
+    select: { isOwner: true, permissions: true },
+  });
+  return { isOwner: me.isOwner, permissions: me.permissions };
+}
+
 /** Every registered TEACHER account, for the /admin roster. SUPER_ADMIN accounts are never listed here. */
 export async function listAllTeachers() {
-  await requireSuperAdmin();
+  await requireAdminPermission("MANAGE_TEACHERS");
 
   const teachers = await prisma.user.findMany({
     where: { role: "TEACHER" },
@@ -43,7 +56,7 @@ export async function listAllTeachers() {
 
 /** One teacher's full profile (minus passwordHash), for the /admin edit dialog. */
 export async function getTeacherById(userId: string) {
-  await requireSuperAdmin();
+  await requireAdminPermission("MANAGE_TEACHERS");
   const teacher = await prisma.user.findFirst({
     where: { id: userId, role: "TEACHER" },
     select: {
@@ -66,7 +79,7 @@ export async function getTeacherById(userId: string) {
 
 /** Admin-side edit of any teacher's profile fields, including activation status. */
 export async function updateTeacherByAdmin(userId: string, input: unknown) {
-  await requireSuperAdmin();
+  await requireAdminPermission("MANAGE_TEACHERS");
   const parsed = adminUpdateTeacherSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: parsed.error.flatten() };
 
@@ -101,7 +114,7 @@ export async function updateTeacherByAdmin(userId: string, input: unknown) {
 
 /** Admin sets a brand-new password for a teacher (e.g. they lost access / forgot it). */
 export async function resetTeacherPassword(userId: string, input: unknown) {
-  await requireSuperAdmin();
+  await requireAdminPermission("MANAGE_TEACHERS");
   const parsed = adminResetPasswordSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: parsed.error.flatten() };
 
@@ -122,7 +135,7 @@ export async function resetTeacherPassword(userId: string, input: unknown) {
  * it's reconstructed from `impersonatorId` when they stop impersonating.
  */
 export async function impersonateTeacher(userId: string) {
-  const adminSession = await requireSuperAdmin();
+  const adminSession = await requireAdminPermission("IMPERSONATE");
 
   const teacher = await prisma.user.findFirst({ where: { id: userId, role: "TEACHER" } });
   if (!teacher) return { ok: false as const, error: "O'qituvchi topilmadi." };
@@ -177,6 +190,121 @@ export async function stopImpersonation() {
   });
 
   return { ok: true as const };
+}
+
+/**
+ * Every SUPER_ADMIN account (owner or limited), for the /admin "Adminlar"
+ * tab. Owner-only — a limited admin can never see who the other admins are
+ * or what they can do, since that's part of the trust boundary that keeps
+ * privilege escalation impossible.
+ */
+export async function listAllAdmins() {
+  await requireOwnerAdmin();
+  const admins = await prisma.user.findMany({
+    where: { role: "SUPER_ADMIN" },
+    orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      username: true,
+      fullName: true,
+      email: true,
+      isOwner: true,
+      permissions: true,
+      isActive: true,
+      createdAt: true,
+    },
+  });
+  return serializeDecimals(admins);
+}
+
+function sanitizePermissions(input: string[]): string[] {
+  // Silently drop anything that isn't a recognized permission key, rather
+  // than erroring — keeps this forward-compatible if ADMIN_PERMISSIONS ever
+  // shrinks, and stops garbage values from ever reaching the database.
+  return Array.from(new Set(input.filter(isValidAdminPermission)));
+}
+
+/**
+ * Promotes an existing TEACHER account to SUPER_ADMIN with the given
+ * (non-owner) permissions. Owner-only. The new admin is never made an
+ * owner themselves — only prisma/create-admin.ts can do that — so this can
+ * never be used to create a second, equally-privileged account by mistake.
+ */
+export async function promoteToAdmin(userId: string, permissions: string[]) {
+  await requireOwnerAdmin();
+
+  const teacher = await prisma.user.findFirst({ where: { id: userId, role: "TEACHER" } });
+  if (!teacher) return { ok: false as const, error: "O'qituvchi topilmadi." };
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { role: "SUPER_ADMIN", permissions: sanitizePermissions(permissions) },
+    });
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
+
+  revalidatePath("/admin");
+  return { ok: true as const };
+}
+
+/** Changes an existing (non-owner) admin's permission set. Owner-only. */
+export async function updateAdminPermissions(userId: string, permissions: string[]) {
+  await requireOwnerAdmin();
+
+  const admin = await prisma.user.findFirst({ where: { id: userId, role: "SUPER_ADMIN" } });
+  if (!admin) return { ok: false as const, error: "Admin topilmadi." };
+  if (admin.isOwner) {
+    return { ok: false as const, error: "Owner-adminning vakolatlarini o'zgartirib bo'lmaydi." };
+  }
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { permissions: sanitizePermissions(permissions) },
+    });
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
+
+  revalidatePath("/admin");
+  return { ok: true as const };
+}
+
+/**
+ * Demotes a (non-owner) admin back to a normal TEACHER account, clearing
+ * their permissions. Owner-only. An owner can never be demoted through
+ * this — that would only ever be done directly against the database, to
+ * make absolutely sure the platform can never be left with zero owners by
+ * a UI mistake.
+ */
+export async function demoteAdmin(userId: string) {
+  await requireOwnerAdmin();
+
+  const admin = await prisma.user.findFirst({ where: { id: userId, role: "SUPER_ADMIN" } });
+  if (!admin) return { ok: false as const, error: "Admin topilmadi." };
+  if (admin.isOwner) {
+    return { ok: false as const, error: "Owner-adminni administratorlikdan chetlashtirib bo'lmaydi." };
+  }
+
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { role: "TEACHER", permissions: [] },
+    });
+  } catch (err) {
+    return { ok: false as const, error: toFriendlyDbError(err) };
+  }
+
+  revalidatePath("/admin");
+  return { ok: true as const };
+}
+
+/** The set of valid permission keys, for the promote/edit-permissions UI. */
+export async function getAvailablePermissions() {
+  await requireOwnerAdmin();
+  return ADMIN_PERMISSIONS;
 }
 
 /** Platform-wide counts for the /admin dashboard header. */

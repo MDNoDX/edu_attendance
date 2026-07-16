@@ -91,6 +91,19 @@ model User {
 
   role UserRole @default(TEACHER)
 
+  /// True only for the owner-level admin(s) provisioned directly via
+  /// prisma/create-admin.ts (the only way to create the very first
+  /// SUPER_ADMIN). Only an owner can promote/demote other accounts to
+  /// SUPER_ADMIN or change their permissions — this prevents a
+  /// lower-privilege admin from ever escalating themselves or anyone else.
+  /// An owner implicitly has every permission regardless of `permissions`.
+  isOwner Boolean @default(false)
+
+  /// Granular capabilities for a SUPER_ADMIN account (ignored for TEACHER).
+  /// See ADMIN_PERMISSIONS in src/lib/permissions.ts for the valid set,
+  /// e.g. "MANAGE_TEACHERS", "IMPERSONATE", "MANAGE_ADMINS".
+  permissions String[] @default([])
+
   /// Default per-attended-lesson earning share in UZS, e.g. 18500.
   /// Can be overridden per-group via Group.teacherLessonRateOverride.
   defaultLessonRate Decimal @default(0) @db.Decimal(14, 2)
