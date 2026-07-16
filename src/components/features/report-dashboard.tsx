@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { FileText, FileSpreadsheet, Loader2, Users, Wallet, TrendingDown, Check } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/shared/stat-card";
+import { FadeInStagger, FadeInItem } from "@/components/shared/motion";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -196,12 +197,23 @@ export function ReportDashboard({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Studentlar" value={analytics.totalStudents} icon={Users} tone="info" />
-        <StatCard label="Oylik kutilayotgan summa" value={formatUZS(analytics.totalMonthlyRevenue)} icon={Wallet} tone="violet" />
-        <StatCard label="Davr ichida ulushim" value={formatUZS(analytics.totalEarnedInRange)} icon={Wallet} tone="success" />
-        <StatCard label="Yo'qotilgan (uzr)" value={formatUZS(analytics.totalLostToCutoff)} icon={TrendingDown} tone="destructive" />
-      </div>
+      <FadeInStagger
+        key={`${String(analytics.from)}-${String(analytics.to)}-${scope}`}
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+      >
+        <FadeInItem>
+          <StatCard label="Studentlar" value={analytics.totalStudents} icon={Users} tone="info" />
+        </FadeInItem>
+        <FadeInItem>
+          <StatCard label="Oylik kutilayotgan summa" value={formatUZS(analytics.totalMonthlyRevenue)} icon={Wallet} tone="violet" />
+        </FadeInItem>
+        <FadeInItem>
+          <StatCard label="Davr ichida ulushim" value={formatUZS(analytics.totalEarnedInRange)} icon={Wallet} tone="success" />
+        </FadeInItem>
+        <FadeInItem>
+          <StatCard label="Yo'qotilgan (uzr)" value={formatUZS(analytics.totalLostToCutoff)} icon={TrendingDown} tone="destructive" />
+        </FadeInItem>
+      </FadeInStagger>
 
       <Card>
         <CardHeader className="pb-2">

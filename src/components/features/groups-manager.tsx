@@ -84,7 +84,14 @@ function ScheduleSlotsEditor({
             <Input type="time" {...register(`scheduleSlots.${index}.startTime`)} className="w-28" />
             <span className="text-sm text-muted-foreground">—</span>
             <Input type="time" {...register(`scheduleSlots.${index}.endTime`)} className="w-28" />
-            <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} disabled={fields.length === 1}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => remove(index)}
+              disabled={fields.length === 1}
+              aria-label="Jadval qatorini o'chirish"
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -306,10 +313,16 @@ export function GroupsManager({
                   </SelectContent>
                 </Select>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(group)}>
+                  <Button variant="ghost" size="icon" onClick={() => openEdit(group)} aria-label={`${group.name} guruhini tahrirlash`}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="text-destructive" onClick={() => setDeleteTarget(group)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive"
+                    onClick={() => setDeleteTarget(group)}
+                    aria-label={`${group.name} guruhini o'chirish`}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

@@ -21,14 +21,19 @@ const toneClasses: Record<NonNullable<StatCardProps["tone"]>, string> = {
 
 export function StatCard({ label, value, icon: Icon, hint, tone = "default" }: StatCardProps) {
   return (
-    <Card className="transition-shadow hover:shadow-md">
+    <Card className="group transition-all hover:-translate-y-0.5 hover:shadow-md">
       <CardContent className="flex items-start justify-between gap-3 p-5">
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">{label}</p>
           <p className="text-2xl font-semibold tracking-tight">{value}</p>
           {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         </div>
-        <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", toneClasses[tone])}>
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110",
+            toneClasses[tone],
+          )}
+        >
           <Icon className="h-5 w-5" />
         </div>
       </CardContent>

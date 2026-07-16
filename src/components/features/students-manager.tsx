@@ -347,7 +347,9 @@ export function StudentsManager({
               <TableRow key={student.id}>
                 <TableCell className="flex items-center gap-2">
                   <Avatar className="h-8 w-8">
-                    {student.photoUrl ? <AvatarImage src={student.photoUrl} alt={student.firstName} /> : null}
+                    {student.photoUrl ? (
+                      <AvatarImage src={student.photoUrl} alt={`${student.firstName} ${student.lastName}`} />
+                    ) : null}
                     <AvatarFallback>{initials(`${student.firstName} ${student.lastName}`)}</AvatarFallback>
                   </Avatar>
                   {student.lastName} {student.firstName}
@@ -365,10 +367,21 @@ export function StudentsManager({
                 <TableCell>{formatDate(student.startDate)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(student)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEdit(student)}
+                      aria-label={`${student.lastName} ${student.firstName}ni tahrirlash`}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="text-destructive" onClick={() => setDeleteTarget(student)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive"
+                      onClick={() => setDeleteTarget(student)}
+                      aria-label={`${student.lastName} ${student.firstName}ni o'chirish`}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>

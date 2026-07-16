@@ -169,10 +169,16 @@ export function CoursesManager({ initialCourses }: { initialCourses: CourseRow[]
                   </span>
                 </div>
                 <div className="flex justify-end gap-1 pt-1">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(course)}>
+                  <Button variant="ghost" size="icon" onClick={() => openEdit(course)} aria-label={`${course.name} kursini tahrirlash`}>
                     <Pencil className="h-4 w-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="text-destructive" onClick={() => setDeleteTarget(course)}>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-destructive"
+                    onClick={() => setDeleteTarget(course)}
+                    aria-label={`${course.name} kursini o'chirish`}
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

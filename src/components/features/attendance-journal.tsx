@@ -324,11 +324,11 @@ export function AttendanceJournal({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => shiftMonth(-1)} disabled={pending}>
+          <Button variant="outline" size="icon" onClick={() => shiftMonth(-1)} disabled={pending} aria-label="Oldingi oy">
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-36 text-center text-sm font-medium capitalize">{monthLabel(monthDate)}</span>
-          <Button variant="outline" size="icon" onClick={() => shiftMonth(1)} disabled={pending}>
+          <Button variant="outline" size="icon" onClick={() => shiftMonth(1)} disabled={pending} aria-label="Keyingi oy">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>

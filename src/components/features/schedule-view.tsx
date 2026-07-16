@@ -77,11 +77,11 @@ export function ScheduleView({ initialSessions }: { initialSessions: SessionRow[
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => shift(-stepDays)}>
+          <Button variant="outline" size="icon" onClick={() => shift(-stepDays)} aria-label="Oldingi davr">
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-[10rem] text-center text-sm font-medium">{formatDate(refDate)}</span>
-          <Button variant="outline" size="icon" onClick={() => shift(stepDays)}>
+          <Button variant="outline" size="icon" onClick={() => shift(stepDays)} aria-label="Keyingi davr">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
