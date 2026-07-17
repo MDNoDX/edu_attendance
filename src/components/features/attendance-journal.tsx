@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Lock,
   Check,
   X as XIcon,
@@ -142,6 +143,41 @@ export function AttendanceJournal({
     const [y, m] = month.split("-").map(Number);
     return new Date(y, m - 1, 1);
   }, [month]);
+
+  // Mobile view shows ONE lesson-day at a time (a vertical list of students)
+  // instead of the full students x dates grid, so a teacher never has to
+  // scroll sideways or pinch-zoom on a phone to reach a far-right column.
+  const [mobileDayIndex, setMobileDayIndex] = useState(0);
+
+  useEffect(() => {
+    if (sessions.length === 0) {
+      setMobileDayIndex(0);
+      return;
+    }
+    const todayStr = new Date().toDateString();
+    const todayIdx = sessions.findIndex((s) => new Date(s.date).toDateString() === todayStr);
+    if (todayIdx >= 0) {
+      setMobileDayIndex(todayIdx);
+      return;
+    }
+    // No lesson today in this month (e.g. just navigated to a different
+    // month) — land on the most recent PAST lesson day, since that's the
+    // one a teacher most likely wants to check or correct, rather than a
+    // locked future date.
+    let lastPastIdx = -1;
+    for (let i = sessions.length - 1; i >= 0; i--) {
+      if (!sessions[i].isFuture) {
+        lastPastIdx = i;
+        break;
+      }
+    }
+    setMobileDayIndex(lastPastIdx >= 0 ? lastPastIdx : sessions.length - 1);
+  }, [sessions]);
+
+  // Sessions can shrink (new month load) between the effect above running
+  // and this render, so clamp defensively rather than indexing out of bounds.
+  const clampedMobileIndex = sessions.length === 0 ? 0 : Math.min(mobileDayIndex, sessions.length - 1);
+  const currentMobileSession = sessions[clampedMobileIndex];
 
   async function handleRegenerate() {
     setRegenerating(true);
@@ -390,7 +426,135 @@ export function AttendanceJournal({
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border">
+        <>
+          {/* Mobile: one lesson-day at a time, students listed vertically —
+              no horizontal scrolling or pinch-zoom needed to reach a
+              far-right date column on a phone screen. */}
+          <div className="space-y-3 sm:hidden">
+            <div className="flex items-center justify-between rounded-xl border border-border bg-card px-2 py-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileDayIndex((i) => Math.max(0, i - 1))}
+                disabled={clampedMobileIndex <= 0}
+                aria-label="Oldingi dars kuni"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="text-center text-sm">
+                <p className="font-medium capitalize">
+                  {currentMobileSession
+                    ? `${weekdayShort(currentMobileSession.date)}, ${dayNumber(currentMobileSession.date)}-${UZ_MONTHS[monthDate.getMonth()]}`
+                    : "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {clampedMobileIndex + 1} / {sessions.length} dars kuni
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMobileDayIndex((i) => Math.min(sessions.length - 1, i + 1))}
+                disabled={clampedMobileIndex >= sessions.length - 1}
+                aria-label="Keyingi dars kuni"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {currentMobileSession?.isFuture ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+                <Lock className="h-5 w-5" />
+                Bu kun hali kelmagan — davomat belgilab bo&apos;lmaydi.
+              </div>
+            ) : (
+              <div className="divide-y divide-border rounded-xl border border-border">
+                {students.map((student) => {
+                  const mark = currentMobileSession?.marks[student.id];
+                  const cellKey = currentMobileSession ? `${currentMobileSession.id}:${student.id}` : "";
+                  return (
+                    <div key={student.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {student.lastName} {student.firstName}
+                        </p>
+                        {mark?.status === "LATE" && mark.arrivalTime && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400">Vaqt: {mark.arrivalTime}</p>
+                        )}
+                        {mark?.note && <p className="truncate text-xs text-muted-foreground">Izoh: {mark.note}</p>}
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={!currentMobileSession || savingCell === cellKey}
+                            className={cn(
+                              "flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-medium transition-colors",
+                              mark ? STATUS_CONFIG[mark.status].className : "bg-muted text-muted-foreground/70",
+                            )}
+                          >
+                            {mark ? (
+                              (() => {
+                                const Icon = STATUS_CONFIG[mark.status].icon;
+                                return (
+                                  <>
+                                    <Icon className="h-3.5 w-3.5" /> {STATUS_CONFIG[mark.status].label}
+                                  </>
+                                );
+                              })()
+                            ) : (
+                              "Belgilash"
+                            )}
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {STATUS_OPTIONS.map((status) => {
+                            const cfg = STATUS_CONFIG[status];
+                            const Icon = cfg.icon;
+                            return (
+                              <DropdownMenuItem
+                                key={status}
+                                onClick={() => currentMobileSession && onStatusPick(currentMobileSession.id, student.id, status)}
+                              >
+                                <Icon className="mr-2 h-4 w-4" /> {cfg.label}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Collapsed by default so the month's running totals don't push
+                the actionable per-day list further down the screen — one
+                tap away via the native <details> disclosure triangle. */}
+            <details className="rounded-xl border border-border bg-muted/20">
+              <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-foreground marker:content-none">
+                <span className="inline-flex items-center gap-1">
+                  <ChevronDown className="h-3.5 w-3.5" /> Oylik jami
+                </span>
+              </summary>
+              <div className="space-y-1 px-3 pb-3 text-xs text-muted-foreground">
+                <p>
+                  Keldi: <strong className="text-foreground">{groupTotal.present}</strong> · Kechikdi:{" "}
+                  <strong className="text-foreground">{groupTotal.late}</strong>
+                </p>
+                <p>
+                  Sababli: <strong className="text-foreground">{groupTotal.excused}</strong> · Sababsiz:{" "}
+                  <strong className="text-foreground">{groupTotal.unexcused}</strong>
+                </p>
+                <p>
+                  Ulushim: <strong className="text-foreground">{formatUZS(groupTotal.earned)}</strong>
+                </p>
+              </div>
+            </details>
+          </div>
+
+          {/* Tablet / desktop: full students x dates grid, unchanged. */}
+          <div className="hidden overflow-x-auto rounded-xl border border-border sm:block">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
@@ -558,7 +722,8 @@ export function AttendanceJournal({
               </tr>
             </tfoot>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       <Dialog open={!!lateDialog} onOpenChange={(open) => !open && setLateDialog(null)}>

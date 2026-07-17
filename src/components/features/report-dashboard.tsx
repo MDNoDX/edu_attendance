@@ -454,55 +454,82 @@ export function ReportDashboard({
             {isPending && <Loader2 className="ml-2 inline h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-6">
-          <button
-            type="button"
-            onClick={() => openDetail("present")}
-            className="rounded-lg bg-success/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
-          >
-            <p className="text-2xl font-semibold text-success">{analytics.present}</p>
-            <p className="text-xs text-muted-foreground">Keldi</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => openDetail("late")}
-            className="rounded-lg bg-warning/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
-          >
-            <p className="text-2xl font-semibold text-warning">{analytics.late}</p>
-            <p className="text-xs text-muted-foreground">Kechikdi</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => openDetail("excused")}
-            className="rounded-lg bg-sky-500/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
-          >
-            <p className="text-2xl font-semibold text-sky-600 dark:text-sky-400">{analytics.excusedAbsent}</p>
-            <p className="text-xs text-muted-foreground">Sababli kelmadi</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => openDetail("unexcused")}
-            className="rounded-lg bg-destructive/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
-          >
-            <p className="text-2xl font-semibold text-destructive">{analytics.unexcusedAbsent}</p>
-            <p className="text-xs text-muted-foreground">Sababsiz kelmadi</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => openDetail("earnedRange")}
-            className="rounded-lg bg-success/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
-          >
-            <p className="text-lg font-semibold text-success">{money(analytics.totalEarnedInRange)}</p>
-            <p className="text-xs text-muted-foreground">Davr ichida ulushim</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => openDetail("lost")}
-            className="rounded-lg bg-destructive/10 p-3 text-center transition-transform hover:-translate-y-0.5 hover:shadow-sm"
-          >
-            <p className="text-lg font-semibold text-destructive">{money(analytics.totalLostToCutoff)}</p>
-            <p className="text-xs text-muted-foreground">Yo&apos;qotilgan</p>
-          </button>
+        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {/* Each pair of related figures nests inside one outer card instead
+              of 6 flat, same-weight boxes — reads as one unified group per
+              topic (davomat / kelmadi / ulush) and stacks cleanly on a
+              single mobile column with no horizontal scrolling. */}
+          <div className="overflow-hidden rounded-xl border border-border">
+            <p className="border-b border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              Davomat
+            </p>
+            <div className="divide-y divide-border">
+              <button
+                type="button"
+                onClick={() => openDetail("present")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-success/5"
+              >
+                <span className="text-sm text-muted-foreground">Keldi</span>
+                <span className="text-lg font-semibold text-success">{analytics.present}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openDetail("late")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-warning/5"
+              >
+                <span className="text-sm text-muted-foreground">Kechikdi</span>
+                <span className="text-lg font-semibold text-warning">{analytics.late}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border">
+            <p className="border-b border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              Kelmadi
+            </p>
+            <div className="divide-y divide-border">
+              <button
+                type="button"
+                onClick={() => openDetail("excused")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-sky-500/5"
+              >
+                <span className="text-sm text-muted-foreground">Sababli</span>
+                <span className="text-lg font-semibold text-sky-600 dark:text-sky-400">{analytics.excusedAbsent}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openDetail("unexcused")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-destructive/5"
+              >
+                <span className="text-sm text-muted-foreground">Sababsiz</span>
+                <span className="text-lg font-semibold text-destructive">{analytics.unexcusedAbsent}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border">
+            <p className="border-b border-border bg-muted/30 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+              Ulush
+            </p>
+            <div className="divide-y divide-border">
+              <button
+                type="button"
+                onClick={() => openDetail("earnedRange")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-success/5"
+              >
+                <span className="text-sm text-muted-foreground">Davr ichida</span>
+                <span className="text-base font-semibold text-success">{money(analytics.totalEarnedInRange)}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openDetail("lost")}
+                className="flex w-full items-center justify-between px-3 py-2.5 text-left transition-colors hover:bg-destructive/5"
+              >
+                <span className="text-sm text-muted-foreground">Yo&apos;qotilgan</span>
+                <span className="text-base font-semibold text-destructive">{money(analytics.totalLostToCutoff)}</span>
+              </button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
